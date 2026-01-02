@@ -1,9 +1,7 @@
-import { useEffect } from 'react';
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { useAppDispatch, useAppSelector } from './hooks/redux';
-import { getCurrentUser, autoLogin } from './features/auth/authSlice';
 
 // Layouts
 import MainLayout from './layouts/MainLayout';
@@ -15,6 +13,7 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import MapPage from './pages/map/MapPage';
 import PropertiesPage from './pages/properties/PropertiesPage';
 import PropertyDetailPage from './pages/properties/PropertyDetailPage';
+import CategoriesPage from './pages/categories/CategoriesPage';
 import AddressesPage from './pages/addresses/AddressesPage';
 import TicketsPage from './pages/tickets/TicketsPage';
 import TicketDetailPage from './pages/tickets/TicketDetailPage';
@@ -33,22 +32,9 @@ import PublicRoute from './components/guards/PublicRoute';
 function App() {
   const dispatch = useAppDispatch();
   const { isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
-  const [initializing, setInitializing] = React.useState(true);
 
-  useEffect(() => {
-    // Auto-login para desenvolvimento/demonstração
-    // Executa apenas uma vez na montagem do componente
-    const token = localStorage.getItem('accessToken');
-    if (!token) {
-      dispatch(autoLogin());
-    }
-    // Aguarda um ciclo para garantir que o estado foi atualizado
-    setTimeout(() => setInitializing(false), 100);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Array vazio para executar apenas na montagem
-
-  // Aguarda inicialização do auto-login
-  if (initializing || isLoading) {
+  // Mostrar loading apenas se estiver carregando
+  if (isLoading) {
     return (
       <Box
         sx={{
@@ -73,6 +59,7 @@ function App() {
           <Route path="/mapa" element={<MapPage />} />
           <Route path="/cadastro/properties" element={<PropertiesPage />} />
           <Route path="/cadastro/properties/:id" element={<PropertyDetailPage />} />
+          <Route path="/cadastro/categories" element={<CategoriesPage />} />
           <Route path="/enderecamento/addresses" element={<AddressesPage />} />
           <Route path="/privacy/public-data" element={<PublicDataPage />} />
           <Route path="/privacy/settings" element={<PrivacySettingsPage />} />

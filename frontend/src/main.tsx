@@ -2,13 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
-import { ThemeProvider, CssBaseline } from '@mui/material';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { CssBaseline } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
 
 import { store } from './store';
-import { theme } from './theme';
+import { ThemeProvider } from './ThemeContext';
+import { ThemedToastContainer } from './components/ThemedToastContainer';
 import App from './App';
 import './index.css';
 
@@ -21,20 +20,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           v7_relativeSplatPath: true,
         }}
       >
-        <ThemeProvider theme={theme}>
+        <ThemeProvider>
           <CssBaseline />
           <App />
-          <ToastContainer
-            position="top-right"
-            autoClose={5000}
-            hideProgressBar={false}
-            newestOnTop
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-          />
+          <ThemedToastContainer />
         </ThemeProvider>
       </BrowserRouter>
     </Provider>

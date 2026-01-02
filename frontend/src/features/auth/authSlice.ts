@@ -1,6 +1,30 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { authService, AuthResponse, LoginCredentials, User } from '@/services/auth.service';
+import { authService } from '@/lib/supabase';
 import { toast } from 'react-toastify';
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: {
+    id: string;
+    name: string;
+    description?: string;
+    permissions: any;
+  };
+}
+
+interface AuthResponse {
+  user: User;
+  accessToken: string;
+  refreshToken: string;
+}
+
+interface LoginCredentials {
+  email: string;
+  password: string;
+  mfaCode?: string;
+}
 
 interface AuthState {
   user: User | null;
@@ -9,7 +33,6 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  requiresMfa: boolean;
 }
 
 const initialState: AuthState = {
@@ -19,23 +42,26 @@ const initialState: AuthState = {
   isAuthenticated: !!localStorage.getItem('accessToken'),
   isLoading: false,
   error: null,
-  requiresMfa: false,
 };
 
 export const login = createAsyncThunk(
   'auth/login',
   async (credentials: LoginCredentials, { rejectWithValue }) => {
     try {
-      const response = await authService.login(credentials);
-      return response;
+      const response = await authService.login(credentials.email, credentials.password);
+      return response as AuthResponse;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Falha no login');
+      return rejectWithValue(error.message || 'Falha no login');
     }
   },
 );
 
 export const logout = createAsyncThunk('auth/logout', async () => {
   await authService.logout();
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+  localStorage.removeItem('session');
 });
 
 export const getCurrentUser = createAsyncThunk('auth/getCurrentUser', async () => {
@@ -50,36 +76,6 @@ const authSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
-    setRequiresMfa: (state, action: PayloadAction<boolean>) => {
-      state.requiresMfa = action.payload;
-    },
-    // Auto-login para desenvolvimento/demonstração
-    autoLogin: (state) => {
-      const mockUser: User = {
-        id: '1',
-        name: 'Administrador Demo',
-        email: 'admin@salesopolis.sp.gov.br',
-        role: {
-          id: 'admin-role',
-          name: 'ADMIN',
-          permissions: ['*'],
-        },
-        mfaEnabled: false,
-      };
-      const mockToken = 'mock-jwt-token-' + Date.now();
-      
-      state.user = mockUser;
-      state.accessToken = mockToken;
-      state.refreshToken = mockToken;
-      state.isAuthenticated = true;
-      state.requiresMfa = false;
-      state.isLoading = false;
-      state.error = null;
-
-      localStorage.setItem('accessToken', mockToken);
-      localStorage.setItem('refreshToken', mockToken);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-    },
   },
   extraReducers: (builder) => {
     // Login
@@ -90,18 +86,10 @@ const authSlice = createSlice({
       })
       .addCase(login.fulfilled, (state, action: PayloadAction<AuthResponse>) => {
         state.isLoading = false;
-        
-        // Check if MFA is required
-        if (action.payload?.requiresMfa) {
-          state.requiresMfa = true;
-          return;
-        }
-
         state.user = action.payload.user;
         state.accessToken = action.payload.accessToken;
         state.refreshToken = action.payload.refreshToken;
         state.isAuthenticated = true;
-        state.requiresMfa = false;
 
         localStorage.setItem('accessToken', action.payload.accessToken);
         localStorage.setItem('refreshToken', action.payload.refreshToken);
@@ -113,6 +101,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
         state.isAuthenticated = false;
+        toast.error(action.payload as string || 'Erro ao fazer login');
       });
 
     // Logout
@@ -132,26 +121,23 @@ const authSlice = createSlice({
 
     // Get Current User
     builder
-      .addCase(getCurrentUser.fulfilled, (state, action: PayloadAction<User>) => {
-        state.user = action.payload;
-        localStorage.setItem('user', JSON.stringify(action.payload));
+      .addCase(getCurrentUser.fulfilled, (state, action: PayloadAction<any>) => {
+        if (action.payload) {
+          state.user = action.payload;
+          localStorage.setItem('user', JSON.stringify(action.payload));
+        }
       })
       .addCase(getCurrentUser.rejected, (state) => {
-        // Não limpar estado em modo demo/mock
-        const hasAccessToken = localStorage.getItem('accessToken');
-        if (!hasAccessToken || !hasAccessToken.startsWith('mock-jwt-token')) {
-          state.user = null;
-          state.accessToken = null;
-          state.refreshToken = null;
-          state.isAuthenticated = false;
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('user');
-        }
-        // Se for token mock, mantém autenticado mesmo com erro de API
+        state.user = null;
+        state.accessToken = null;
+        state.refreshToken = null;
+        state.isAuthenticated = false;
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
       });
   },
 });
 
-export const { clearError, setRequiresMfa, autoLogin } = authSlice.actions;
+export const { clearError } = authSlice.actions;
 export default authSlice.reducer;

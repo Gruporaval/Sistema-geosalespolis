@@ -41,54 +41,86 @@ const initialState: DashboardState = {
 export const fetchDashboardData = createAsyncThunk(
   'dashboard/fetchData',
   async () => {
-    // Modo demo: retorna dados mockados sem chamar API
-    const token = localStorage.getItem('accessToken');
-    if (token && token.startsWith('mock-jwt-token')) {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+
+      // Buscar total de propriedades
+      const { count: totalProperties } = await supabase
+        .from('properties')
+        .select('*', { count: 'exact', head: true });
+
+      // Buscar propriedades com endereço (zip_code preenchido)
+      const { count: propertiesWithAddress } = await supabase
+        .from('properties')
+        .select('*', { count: 'exact', head: true })
+        .not('zip_code', 'is', null);
+
+      // Buscar propriedades com geometria
+      const { count: propertiesWithGeometry } = await supabase
+        .from('properties')
+        .select('*', { count: 'exact', head: true })
+        .not('coordinates', 'is', null);
+
+      // Buscar propriedades por tipo
+      const { data: propertiesByTypeData } = await supabase
+        .from('properties')
+        .select('property_type');
+
+      // Agrupar por tipo
+      const typeGroups: { [key: string]: number } = {};
+      propertiesByTypeData?.forEach((prop) => {
+        const type = prop.property_type || 'Não definido';
+        typeGroups[type] = (typeGroups[type] || 0) + 1;
+      });
+
+      const propertiesByType = Object.entries(typeGroups).map(([type, count]) => ({
+        type,
+        count,
+      }));
+
+      // Buscar propriedades por bairro
+      const { data: propertiesByDistrictData } = await supabase
+        .from('properties')
+        .select('neighborhood');
+
+      // Agrupar por bairro
+      const districtGroups: { [key: string]: number } = {};
+      propertiesByDistrictData?.forEach((prop) => {
+        const district = prop.neighborhood || 'Não definido';
+        districtGroups[district] = (districtGroups[district] || 0) + 1;
+      });
+
+      const propertiesByDistrict = Object.entries(districtGroups).map(([district, count]) => ({
+        district,
+        count,
+      }));
+
+      // Calcular progresso de recadastramento
+      const recadastrationProgress = totalProperties
+        ? ((propertiesWithAddress || 0) / totalProperties) * 100
+        : 0;
+
       return {
         kpis: {
-          totalProperties: 15847,
-          propertiesWithAddress: 14523,
-          propertiesWithGeometry: 13891,
-          recadastrationProgress: 87.5,
-          activeTickets: 23,
-          resolvedTickets: 156,
+          totalProperties: totalProperties || 0,
+          propertiesWithAddress: propertiesWithAddress || 0,
+          propertiesWithGeometry: propertiesWithGeometry || 0,
+          recadastrationProgress: Number(recadastrationProgress.toFixed(1)),
+          activeTickets: 0,
+          resolvedTickets: 0,
         },
-        propertiesByType: [
-          { type: 'Residencial', count: 12543 },
-          { type: 'Comercial', count: 2187 },
-          { type: 'Industrial', count: 456 },
-          { type: 'Rural', count: 543 },
-          { type: 'Público', count: 118 },
+        propertiesByType: propertiesByType.length > 0 ? propertiesByType : [
+          { type: 'Sem dados', count: 0 }
         ],
-        propertiesByDistrict: [
-          { district: 'Centro', count: 3245 },
-          { district: 'Zona Norte', count: 4567 },
-          { district: 'Zona Sul', count: 3891 },
-          { district: 'Zona Leste', count: 2234 },
-          { district: 'Zona Oeste', count: 1910 },
+        propertiesByDistrict: propertiesByDistrict.length > 0 ? propertiesByDistrict : [
+          { district: 'Sem dados', count: 0 }
         ],
-        recentActivity: [
-          { id: 1, type: 'Cadastro', description: 'Novo imóvel cadastrado', date: new Date().toISOString() },
-          { id: 2, type: 'Atualização', description: 'Endereço atualizado', date: new Date().toISOString() },
-          { id: 3, type: 'Ticket', description: 'Ticket #245 resolvido', date: new Date().toISOString() },
-        ],
+        recentActivity: [],
       };
+    } catch (error) {
+      console.error('Erro ao buscar dados do dashboard:', error);
+      throw error;
     }
-
-    // Modo produção: chama API real
-    const [kpis, byType, byDistrict, activity] = await Promise.all([
-      api.get<{ data: DashboardKPIs }>('/dashboard/kpis'),
-      api.get<{ data: PropertiesByType[] }>('/dashboard/properties-by-type'),
-      api.get<{ data: PropertiesByDistrict[] }>('/dashboard/properties-by-district'),
-      api.get<{ data: any[] }>('/dashboard/recent-activity'),
-    ]);
-
-    return {
-      kpis: kpis.data.data,
-      propertiesByType: byType.data.data,
-      propertiesByDistrict: byDistrict.data.data,
-      recentActivity: activity.data.data,
-    };
   },
 );
 

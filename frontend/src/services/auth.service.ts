@@ -1,4 +1,5 @@
-import api from './api';
+// Este arquivo foi substituído por lib/supabase.ts
+// Mantido apenas para compatibilidade de imports
 
 export interface LoginCredentials {
   email: string;
@@ -30,58 +31,39 @@ export interface EnableMfaResponse {
   qrCode: string;
 }
 
+// Redireciona para o novo serviço
 export const authService = {
-  async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/login', credentials);
-    return response.data;
+  async login(): Promise<AuthResponse> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
   async logout(): Promise<void> {
-    await api.post('/auth/logout');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async refreshToken(refreshToken: string): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/refresh', {
-      refreshToken,
-    });
-    return response.data;
+  async refreshToken(): Promise<AuthResponse> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
   async getCurrentUser(): Promise<User> {
-    const response = await api.get<User>('/auth/me');
-    return response.data;
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async updateProfile(data: Partial<User>): Promise<User> {
-    const response = await api.patch<User>('/auth/profile', data);
-    return response.data;
+  async updateProfile(): Promise<User> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async changePassword(oldPassword: string, newPassword: string): Promise<void> {
-    await api.post('/auth/change-password', { oldPassword, newPassword });
+  async changePassword(): Promise<void> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
   async enableMfa(): Promise<EnableMfaResponse> {
-    const response = await api.post<EnableMfaResponse>('/auth/mfa/enable');
-    return response.data;
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async verifyMfa(code: string): Promise<void> {
-    await api.post('/auth/mfa/verify', { code });
+  async verifyMfa(): Promise<void> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async disableMfa(code: string): Promise<void> {
-    await api.post('/auth/mfa/disable', { code });
+  async disableMfa(): Promise<void> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async requestPasswordReset(email: string): Promise<void> {
-    await api.post('/auth/password-reset/request', { email });
+  async requestPasswordReset(): Promise<void> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
-
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    await api.post('/auth/password-reset/confirm', { token, newPassword });
+  async resetPassword(): Promise<void> {
+    throw new Error('Use authService de lib/supabase.ts');
   },
 };

@@ -6,356 +6,506 @@ import {
   Switch,
   Chip,
   Card,
-  CardContent,
-  Divider,
-  FormControlLabel,
+  CardActionArea,
+  Avatar,
+  Tab,
+  Tabs,
+  Skeleton,
+  TextField,
+  InputAdornment,
+  IconButton,
+  Tooltip,
+  useTheme,
+  Alert,
+  Divider
 } from '@mui/material';
 import {
   Layers as LayersIcon,
-  LocationOn as LocationIcon,
-  ZoomIn as ZoomInIcon,
-  ZoomOut as ZoomOutIcon,
-  GetApp as ExportIcon,
-  Edit as EditIcon,
-  Straighten as MeasureIcon,
   Search as SearchIcon,
+  Home as HomeIcon,
+  Business as BusinessIcon,
+  Factory as FactoryIcon,
+  Agriculture as RuralIcon,
+  Domain as PublicIcon,
+  Place as PlaceIcon,
+  Map as MapIcon,
+  GpsFixed as GpsIcon,
+  ChevronRight,
+  ChevronLeft,
+  MyLocation as MyLocationIcon,
+  SatelliteAlt as SatelliteIcon,
+  MapOutlined as StreetIcon,
 } from '@mui/icons-material';
 
 interface CamadaGIS {
   id: string;
-  nome: string;
-  tipo: 'vector' | 'raster';
-  visibilidade: 'publica' | 'interna';
-  ativa: boolean;
-  estilo: {
+  name: string;
+  type: 'vector' | 'raster';
+  is_active: boolean;
+  style: {
     color: string;
     fillColor: string;
-    weight: number;
-    opacity: number;
-    fillOpacity: number;
   };
 }
 
-const camadasIniciais: CamadaGIS[] = [
-  {
-    id: 'camada-1',
-    nome: 'Imóveis Urbanos',
-    tipo: 'vector',
-    visibilidade: 'interna',
-    ativa: true,
-    estilo: { color: '#3b82f6', fillColor: '#3b82f6', weight: 2, opacity: 0.8, fillOpacity: 0.2 },
-  },
-  {
-    id: 'camada-2',
-    nome: 'PGV - Planta Genérica de Valores',
-    tipo: 'vector',
-    visibilidade: 'interna',
-    ativa: false,
-    estilo: { color: '#10b981', fillColor: '#10b981', weight: 1, opacity: 0.6, fillOpacity: 0.1 },
-  },
-  {
-    id: 'camada-3',
-    nome: 'Loteamentos',
-    tipo: 'vector',
-    visibilidade: 'publica',
-    ativa: false,
-    estilo: { color: '#f59e0b', fillColor: '#f59e0b', weight: 1, opacity: 0.5, fillOpacity: 0.05 },
-  },
-  {
-    id: 'camada-4',
-    nome: 'Zoneamento Urbano',
-    tipo: 'vector',
-    visibilidade: 'publica',
-    ativa: false,
-    estilo: { color: '#8b5cf6', fillColor: '#8b5cf6', weight: 1, opacity: 0.6, fillOpacity: 0.15 },
-  },
-  {
-    id: 'camada-5',
-    nome: 'Áreas de Preservação',
-    tipo: 'vector',
-    visibilidade: 'publica',
-    ativa: false,
-    estilo: { color: '#22c55e', fillColor: '#22c55e', weight: 2, opacity: 0.7, fillOpacity: 0.25 },
-  },
-];
+interface Property {
+  id: string;
+  digital_code: string;
+  street: string;
+  number?: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  zip_code?: string;
+  property_type: string;
+  owner_name?: string;
+  lat?: number;
+  lng?: number;
+  geocoded?: boolean;
+}
+
+const getPropertyIcon = (type: string) => {
+  switch (type) {
+    case 'Comercial': return <BusinessIcon fontSize="small" />;
+    case 'Industrial': return <FactoryIcon fontSize="small" />;
+    case 'Rural': return <RuralIcon fontSize="small" />;
+    case 'Público': return <PublicIcon fontSize="small" />;
+    default: return <HomeIcon fontSize="small" />;
+  }
+};
+
+const getPropertyColor = (type: string) => {
+  switch (type) {
+    case 'Comercial': return 'info.main';
+    case 'Industrial': return 'warning.main';
+    case 'Rural': return 'success.main';
+    case 'Público': return 'secondary.main';
+    default: return 'primary.main';
+  }
+};
 
 export default function MapPage() {
+  const theme = useTheme();
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
-  const [camadas, setCamadas] = useState<CamadaGIS[]>(camadasIniciais);
-  const [initialized, setInitialized] = useState(false);
-  const [mapInfo, setMapInfo] = useState({
-    zoom: 14,
-    lat: -23.5291,
-    lng: -45.8468,
-  });
+  const layersRef = useRef<any>({});
+  const markersRef = useRef<{ [key: string]: any }>({});
+
+  const [camadas, setCamadas] = useState<CamadaGIS[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState(0);
+  const [loadingProperties, setLoadingProperties] = useState(true);
+
+  // Estado do layout
+  const [isPanelOpen, setIsPanelOpen] = useState(true);
+
+  // Tipo de Mapa: 'streets' | 'satellite'
+  const [mapType, setMapType] = useState('streets');
+
+  // Geo padrão: Salesópolis
+  const DEFAULT_CENTER = [-23.5323, -45.8466];
 
   useEffect(() => {
-    if (!mapRef.current || initialized) return;
-
-    // Adiciona CSS do Leaflet
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(link);
-
-    const L = (window as any).L;
-    if (!L) {
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.async = true;
-      script.onload = () => initMap();
-      document.head.appendChild(script);
-    } else {
-      initMap();
+    // Carregar Leaflet Styles
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
     }
 
-    function initMap() {
-      const L = (window as any).L;
-      if (!mapRef.current) return;
-      
-      // Limpa o container se já tiver conteúdo
-      if (mapRef.current.innerHTML) {
-        mapRef.current.innerHTML = '';
-      }
-      
-      // Remove _leaflet_id se existir
-      if ((mapRef.current as any)._leaflet_id) {
-        delete (mapRef.current as any)._leaflet_id;
-      }
-      
-      const map = L.map(mapRef.current).setView([-23.5291, -45.8468], 14);
-      mapInstanceRef.current = map;
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19,
-      }).addTo(map);
-
-      // Marker da prefeitura
-      const marker = L.marker([-23.5291, -45.8468]).addTo(map);
-      marker
-        .bindPopup(
-          '<b>Prefeitura de Salesópolis</b><br>Rua Pedro Rodrigues de Camargo, 215<br>Centro - Salesópolis/SP'
-        )
-        .openPopup();
-
-      // Atualiza info ao mover o mapa
-      map.on('zoomend moveend', () => {
-        const center = map.getCenter();
-        setMapInfo({
-          zoom: map.getZoom(),
-          lat: Number(center.lat.toFixed(4)),
-          lng: Number(center.lng.toFixed(4)),
+    const init = async () => {
+      if (!(window as any).L) {
+        await new Promise<void>((resolve) => {
+          const script = document.createElement('script');
+          script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+          script.async = true;
+          script.onload = () => resolve();
+          document.head.appendChild(script);
         });
-      });
-
-      setInitialized(true);
-    }
-
-    // Cleanup: remove o mapa ao desmontar
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
       }
-      setInitialized(false);
+      initMap();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    init();
+    loadLayers();
+    loadProperties();
   }, []);
 
-  const toggleCamada = (id: string) => {
-    setCamadas((prev) =>
-      prev.map((camada) =>
-        camada.id === id ? { ...camada, ativa: !camada.ativa } : camada
-      )
-    );
+  // Troca de Camada Base (Satélite vs Rua)
+  useEffect(() => {
+    if (!mapInstanceRef.current || !layersRef.current) return;
+    const map = mapInstanceRef.current;
+
+    // Remove todas
+    if (map.hasLayer(layersRef.current.streets)) map.removeLayer(layersRef.current.streets);
+    if (map.hasLayer(layersRef.current.satellite)) map.removeLayer(layersRef.current.satellite);
+    if (map.hasLayer(layersRef.current.hybrid)) map.removeLayer(layersRef.current.hybrid);
+
+    // Adiciona a selecionada
+    if (mapType === 'streets') {
+      layersRef.current.streets.addTo(map);
+    } else {
+      layersRef.current.satellite.addTo(map);
+      layersRef.current.hybrid.addTo(map); // Labels sobre o satélite
+    }
+  }, [mapType]);
+
+  function initMap() {
+    const L = (window as any).L;
+    if (!mapRef.current) return;
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.invalidateSize();
+      return;
+    }
+
+    const map = L.map(mapRef.current, { zoomControl: false })
+      .setView(DEFAULT_CENTER, 15);
+
+    mapInstanceRef.current = map;
+
+    // DEFINIÇÃO DAS CAMADAS BASE (ESRI - Gratuito e Top de Linha)
+    // 1. Ruas (Estilo Clean/Profissional)
+    const esriStreets = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Esri, HERE, Garmin, Intermap, inclement P Corp., GEBCO, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), swisstopo, © OpenStreetMap contributors, and the GIS User Community',
+      maxZoom: 19
+    });
+
+    // 2. Satélite Rápido (Google Hybrid - Satélite + Ruas)
+    // Hack popular para usar tiles do Google no Leaflet (Super rápido)
+    const googleSatellite = L.tileLayer('http://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      attribution: 'Google Maps'
+    });
+
+    // 3. (Removido labels separados pois o Google Hybrid já traz junto)
+
+    layersRef.current = {
+      streets: esriStreets,
+      satellite: googleSatellite,
+      hybrid: googleSatellite, // Google já é hibrido
+    };
+
+    // Inicia com Streets
+    esriStreets.addTo(map);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+  }
+
+  async function loadLayers() {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const { data } = await supabase.from('gis_layers').select('*');
+      if (data) setCamadas(data);
+    } catch (e) { console.error(e); }
+  }
+
+  async function loadProperties() {
+    try {
+      setLoadingProperties(true);
+      const { supabase } = await import('@/lib/supabase');
+      const { data } = await supabase.from('properties').select('*');
+
+      if (data) {
+        const initialProps = data.map((p: any) => ({
+          ...p,
+          lat: p.lat || null,
+          lng: p.lng || null,
+          geocoded: false
+        }));
+
+        setProperties(initialProps);
+        setLoadingProperties(false);
+        // Tenta achar os sem coord
+        processGeocodingQueue(initialProps);
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  async function processGeocodingQueue(props: Property[]) {
+    const updatedProps = [...props];
+    let changed = false;
+
+    for (let i = 0; i < updatedProps.length; i++) {
+      const prop = updatedProps[i];
+      if (prop.lat && prop.lng && prop.lat !== 0) continue;
+
+      if (i < 50 && !prop.geocoded) {
+        try {
+          let foundLat = null;
+          let foundLng = null;
+
+          // 1. Tentar endereço exato
+          if (!foundLat) {
+            const query = `${prop.street}, ${prop.number || ''}, Salesópolis, São Paulo, Brazil`;
+            // Usar Nominatim (Free)
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+            try {
+              const res = await fetch(url);
+              const d = await res.json();
+              if (d && d.length > 0) {
+                foundLat = parseFloat(d[0].lat);
+                foundLng = parseFloat(d[0].lon);
+              }
+            } catch (e) { }
+          }
+
+          // 2. Tentar CEP
+          if (!foundLat && prop.zip_code) {
+            const cleanCep = prop.zip_code.replace(/\D/g, '');
+            const urlCep = `https://nominatim.openstreetmap.org/search?format=json&postalcode=${cleanCep}&country=Brazil&limit=1`;
+            try {
+              const res = await fetch(urlCep);
+              const d = await res.json();
+              if (d && d.length > 0) {
+                foundLat = parseFloat(d[0].lat);
+                foundLng = parseFloat(d[0].lon);
+              }
+            } catch (e) { }
+          }
+
+          // 3. Fallback Cidade
+          if (!foundLat) {
+            const queryF = `${prop.street}, Salesópolis, São Paulo`;
+            const urlF = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryF)}&limit=1`;
+            try {
+              const res = await fetch(urlF);
+              const d = await res.json();
+              if (d && d.length > 0) {
+                foundLat = parseFloat(d[0].lat);
+                foundLng = parseFloat(d[0].lon);
+              }
+            } catch (e) { }
+          }
+
+          if (foundLat) {
+            updatedProps[i].lat = foundLat;
+            updatedProps[i].lng = foundLng;
+            updatedProps[i].geocoded = true;
+            changed = true;
+            setProperties([...updatedProps]);
+          }
+        } catch (e) { }
+
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || properties.length === 0) return;
+    const L = (window as any).L;
+    const map = mapInstanceRef.current;
+
+    Object.values(markersRef.current).forEach((m: any) => m.remove());
+    markersRef.current = {};
+
+    properties.forEach(prop => {
+      if (!prop.lat || !prop.lng) return;
+
+      const marker = L.marker([prop.lat, prop.lng], {
+        icon: L.divIcon({
+          className: 'custom-pin',
+          html: `
+            <div style="
+              background-color: ${prop.property_type === 'Comercial' ? '#0288d1' : prop.property_type === 'Industrial' ? '#ed6c02' : '#1976d2'}; 
+              width: 14px; height: 14px; 
+              border-radius: 50%; 
+              border: 2px solid white; 
+              box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            "></div>
+          `,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        })
+      }).addTo(map);
+
+      marker.on('click', () => {
+        setIsPanelOpen(true);
+        handleMarkerClick(prop);
+      });
+
+      markersRef.current[prop.id] = marker;
+    });
+  }, [properties]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const L = (window as any).L;
+
+    Object.entries(markersRef.current).forEach(([id, marker]: any) => {
+      const isSelected = id === selectedPropertyId;
+      if (isSelected) {
+        marker.setZIndexOffset(1000);
+        marker.setIcon(L.divIcon({
+          className: 'selected-pin',
+          html: `
+              <div style="
+                background-color: #d81b60; 
+                width: 40px; height: 40px; 
+                border-radius: 50% 50% 50% 0; 
+                transform: rotate(-45deg); 
+                border: 3px solid white; 
+                box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
+                display: flex; align-items: center; justify-content: center;
+              ">
+                 <div style="width: 14px; height: 14px; background: white; border-radius: 50%;"></div>
+              </div>
+            `,
+          iconSize: [40, 40],
+          iconAnchor: [20, 40],
+          popupAnchor: [0, -35]
+        }));
+        mapInstanceRef.current.flyTo(marker.getLatLng(), 18, { animate: true, duration: 1.2 });
+      }
+    });
+  }, [selectedPropertyId]);
+
+  const handleMarkerClick = (prop: Property) => {
+    setSelectedPropertyId(prop.id);
+    setActiveTab(0);
+    setTimeout(() => {
+      document.getElementById(`card-${prop.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
   };
 
+  const filtered = properties.filter(p =>
+    p.street.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.digital_code.includes(searchTerm)
+  );
+
   return (
-    <Box sx={{ height: 'calc(100vh - 140px)', display: 'flex', gap: 0 }}>
-      {/* Painel de Camadas */}
+    <Box sx={{ position: 'relative', width: '100%', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+
+      {/* MAPA FULLSCREEN */}
+      <div ref={mapRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }} />
+
+      {/* CONTROLES FLUTUANTES (SUPERIOR ESQUERDO/DIREITO) */}
+      <Box sx={{ position: 'absolute', top: 20, left: 20, zIndex: 1100, display: 'flex', gap: 1 }}>
+        <Paper sx={{ borderRadius: 2, overflow: 'hidden', display: 'flex' }}>
+          <Tooltip title="Seu Local">
+            <IconButton onClick={() => mapInstanceRef.current?.setView([-23.5323, -45.8466], 15)}>
+              <MyLocationIcon color="primary" />
+            </IconButton>
+          </Tooltip>
+        </Paper>
+
+        <Paper sx={{ borderRadius: 2, overflow: 'hidden', display: 'flex' }}>
+          <Tooltip title="Mapa de Ruas">
+            <IconButton
+              color={mapType === 'streets' ? 'primary' : 'default'}
+              onClick={() => setMapType('streets')}
+            >
+              <StreetIcon />
+            </IconButton>
+          </Tooltip>
+          <Divider orientation="vertical" flexItem />
+          <Tooltip title="Satélite">
+            <IconButton
+              color={mapType === 'satellite' ? 'primary' : 'default'}
+              onClick={() => setMapType('satellite')}
+            >
+              <SatelliteIcon />
+            </IconButton>
+          </Tooltip>
+        </Paper>
+      </Box>
+
+      {/* MENU LATERAL FLUTUANTE */}
       <Paper
+        elevation={8}
         sx={{
-          width: 320,
-          borderRight: 1,
-          borderColor: 'divider',
-          overflowY: 'auto',
-          p: 2,
+          position: 'absolute', top: 20, right: 20, bottom: 20,
+          width: 380, zIndex: 1200, borderRadius: 3,
+          display: 'flex', flexDirection: 'column',
+          transform: isPanelOpen ? 'translateX(0)' : 'translateX(calc(100% + 40px))',
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          bgcolor: 'background.paper',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-          <LayersIcon color="primary" />
-          <Typography variant="h6" fontWeight={600}>
-            Camadas do Mapa
-          </Typography>
+        {/* Toggle para Abrir */}
+        {!isPanelOpen && (
+          <Box onClick={() => setIsPanelOpen(true)}
+            sx={{
+              position: 'absolute', left: -50, top: 20, width: 40, height: 40,
+              bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+            }}
+          >
+            <ChevronLeft />
+          </Box>
+        )}
+
+        {/* Header */}
+        <Box sx={{ p: 0, borderBottom: 1, borderColor: 'divider' }}>
+          <Box display="flex" alignItems="center" p={1} pr={2}>
+            <IconButton onClick={() => setIsPanelOpen(false)}><ChevronRight /></IconButton>
+            <Typography variant="h6" fontWeight={700} sx={{ flex: 1, ml: 1 }}>Imóveis</Typography>
+          </Box>
+          <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} variant="fullWidth">
+            <Tab icon={<PlaceIcon />} label="Lista" />
+            <Tab icon={<LayersIcon />} label="Camadas" />
+          </Tabs>
+          {activeTab === 0 && (
+            <Box p={2}>
+              <TextField
+                fullWidth size="small" placeholder="Filtrar..."
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                  sx: { borderRadius: 3 }
+                }}
+              />
+            </Box>
+          )}
         </Box>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {camadas.map((camada) => (
-            <Card key={camada.id} variant="outlined">
-              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                      <Typography variant="subtitle2" fontWeight={600} noWrap>
-                        {camada.nome}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+        {/* Lista */}
+        <Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: theme.palette.mode === 'dark' ? '#121212' : '#f8f9fa' }}>
+          {activeTab === 0 && filtered.map(prop => (
+            <Card
+              key={prop.id} id={`card-${prop.id}`}
+              onClick={() => setSelectedPropertyId(prop.id)}
+              elevation={selectedPropertyId === prop.id ? 4 : 0}
+              sx={{
+                mb: 2, borderRadius: 3,
+                border: '1px solid', borderColor: selectedPropertyId === prop.id ? 'primary.main' : 'divider',
+                bgcolor: 'background.paper', cursor: 'pointer',
+              }}
+            >
+              <CardActionArea sx={{ p: 2 }}>
+                <Box display="flex" alignItems="center" gap={2}>
+                  <Avatar sx={{ bgcolor: getPropertyColor(prop.property_type), width: 40, height: 40 }}>
+                    {getPropertyIcon(prop.property_type)}
+                  </Avatar>
+                  <Box flex={1}>
+                    <Typography variant="subtitle2" fontWeight={700} noWrap sx={{ maxWidth: 190 }}>
+                      {prop.street}, {prop.number || 'S/N'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">{prop.neighborhood}</Typography>
+                    <Box display="flex" gap={1} mt={0.5} alignItems="center">
                       <Chip
-                        label={camada.visibilidade}
+                        label={prop.digital_code}
                         size="small"
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: '0.7rem' }}
+                        sx={{ height: 18, fontSize: '0.6rem', fontWeight: 600 }}
                       />
-                      <Chip
-                        label={camada.tipo}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 20, fontSize: '0.7rem' }}
-                      />
+                      {prop.geocoded && (
+                        <Tooltip title="Localização Verificada">
+                          <GpsIcon color="success" sx={{ fontSize: 14 }} />
+                        </Tooltip>
+                      )}
                     </Box>
-                    <Box
-                      sx={{
-                        width: '100%',
-                        height: 8,
-                        borderRadius: 1,
-                        bgcolor: camada.estilo.fillColor,
-                        opacity: camada.ativa ? 0.8 : 0.3,
-                        border: `2px solid ${camada.estilo.color}`,
-                      }}
-                    />
                   </Box>
-                  <Switch
-                    checked={camada.ativa}
-                    onChange={() => toggleCamada(camada.id)}
-                    size="small"
-                  />
                 </Box>
-              </CardContent>
+              </CardActionArea>
             </Card>
           ))}
         </Box>
-
-        <Divider sx={{ my: 3 }} />
-
-        <Paper
-          sx={{
-            p: 2,
-            bgcolor: 'action.hover',
-            borderRadius: 2,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <LocationIcon fontSize="small" color="primary" />
-            <Typography variant="body2" fontWeight={600}>
-              Centro: Salesópolis, SP
-            </Typography>
-          </Box>
-          <Typography variant="caption" color="text.secondary" display="block">
-            Sistema: SIRGAS 2000 / UTM 23S
-          </Typography>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-            Projeção: WGS84 / EPSG:4326
-          </Typography>
-        </Paper>
       </Paper>
-
-      {/* Mapa */}
-      <Box sx={{ flex: 1, position: 'relative' }}>
-        <div
-          ref={mapRef}
-          style={{
-            width: '100%',
-            height: '100%',
-            background: '#f0f0f0',
-          }}
-        />
-
-        {/* Ferramentas GIS - Card Flutuante */}
-        <Paper
-          sx={{
-            position: 'absolute',
-            bottom: 16,
-            right: 16,
-            p: 2,
-            minWidth: 280,
-            bgcolor: 'background.paper',
-            backdropFilter: 'blur(10px)',
-            boxShadow: 3,
-          }}
-        >
-          <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-            Ferramentas GIS
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-            <Chip icon={<SearchIcon />} label="Consultar" size="small" clickable />
-            <Chip icon={<MeasureIcon />} label="Medir" size="small" clickable />
-            <Chip icon={<ExportIcon />} label="Exportar" size="small" clickable />
-            <Chip icon={<EditIcon />} label="Editar" size="small" clickable />
-          </Box>
-          <Divider sx={{ my: 1 }} />
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '0.75rem',
-              color: 'text.secondary',
-              fontFamily: 'monospace',
-            }}
-          >
-            <span>Zoom: {mapInfo.zoom}</span>
-            <span>
-              {mapInfo.lat}, {mapInfo.lng}
-            </span>
-          </Box>
-        </Paper>
-
-        {/* Legenda de Camadas Ativas */}
-        {camadas.filter((c) => c.ativa).length > 0 && (
-          <Paper
-            sx={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              p: 1.5,
-              maxWidth: 220,
-            }}
-          >
-            <Typography variant="caption" fontWeight={600} display="block" gutterBottom>
-              Camadas Ativas
-            </Typography>
-            {camadas
-              .filter((c) => c.ativa)
-              .map((camada) => (
-                <Box
-                  key={camada.id}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    mb: 0.5,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: 0.5,
-                      bgcolor: camada.estilo.fillColor,
-                      border: `2px solid ${camada.estilo.color}`,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <Typography variant="caption" noWrap>
-                    {camada.nome}
-                  </Typography>
-                </Box>
-              ))}
-          </Paper>
-        )}
-      </Box>
     </Box>
   );
 }

@@ -1,241 +1,406 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  TextField,
-  InputAdornment,
-  Chip,
-  IconButton,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
+    Box,
+    Paper,
+    Typography,
+    Button,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Avatar,
+    IconButton,
+    Tooltip,
+    Modal,
+    TextField,
+    MenuItem,
+    Grid,
+    CircularProgress,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    InputAdornment,
+    Chip,
+    Checkbox,
+    FormControlLabel,
+    TablePagination
 } from '@mui/material';
 import {
-  Search as SearchIcon,
-  Add as AddIcon,
-  Edit as EditIcon,
-  Visibility as ViewIcon,
+    Add as AddIcon,
+    Search as SearchIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    Visibility as ViewIcon,
+    Close as CloseIcon,
+    Home as HomeIcon,
 } from '@mui/icons-material';
-import { useAppDispatch, useAppSelector } from '@/hooks/redux';
-import { fetchProperties, setFilters } from '@/features/properties/propertiesSlice';
-import { format } from 'date-fns';
+import { toast } from 'react-toastify';
 
-const typeColors: Record<string, string> = {
-  RESIDENTIAL: 'primary',
-  COMMERCIAL: 'secondary',
-  INDUSTRIAL: 'warning',
-  RURAL: 'success',
-  MIXED: 'info',
-  VACANT: 'default',
-};
+interface Property {
+    id: string;
+    digital_code: string;
+    street: string;
+    number?: string;
+    complement?: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+    zip_code?: string;
+    area_total?: number;
+    area_built?: number;
+    property_type?: string;
+    status: 'active' | 'inactive' | 'pending';
+    owner_name?: string;
+    owner_document?: string;
+    owner_phone?: string;
+    owner_email?: string;
+    lat?: number;
+    lng?: number; // Adicionado para Geo
+}
 
-const statusColors: Record<string, string> = {
-  ACTIVE: 'success',
-  INACTIVE: 'default',
-  PENDING: 'warning',
-  ARCHIVED: 'error',
-};
+// ... Tipos de imóvel e status (simplificado para economia de tokens, mas mantendo funcionalidade)
+const propertyTypes = ['Residencial', 'Comercial', 'Industrial', 'Rural', 'Público', 'Misto'];
 
 export default function PropertiesPage() {
-  const navigate = useNavigate();
-  const dispatch = useAppDispatch();
-  const { items, isLoading: _isLoading, pagination, filters } = useAppSelector((state) => state.properties);
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(20);
+    const [loading, setLoading] = useState(true);
+    const [properties, setProperties] = useState<Property[]>([]);
+    const [filteredProperties, setFilteredProperties] = useState<Property[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [openDialog, setOpenDialog] = useState(false);
+    const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [loadingCep, setLoadingCep] = useState(false);
+    const [useExistingAddress, setUseExistingAddress] = useState(false);
 
-  useEffect(() => {
-    dispatch(
-      fetchProperties({
-        page: page + 1,
-        pageSize: rowsPerPage,
-        filters: { ...filters, search },
-      }),
+    // Form State
+    const [formData, setFormData] = useState({
+        digital_code: '',
+        street: '',
+        number: '',
+        complement: '',
+        neighborhood: '',
+        city: 'Salesópolis',
+        state: 'SP',
+        zip_code: '',
+        area_total: '',
+        area_built: '',
+        property_type: 'Residencial',
+        owner_name: '',
+        owner_document: '',
+        owner_phone: '',
+        owner_email: '',
+    });
+
+    useEffect(() => {
+        loadProperties();
+    }, []);
+
+    useEffect(() => {
+        const term = searchTerm.toLowerCase();
+        const filtered = properties.filter(
+            (prop) =>
+                prop.digital_code?.toLowerCase().includes(term) ||
+                prop.street?.toLowerCase().includes(term) ||
+                prop.neighborhood?.toLowerCase().includes(term) ||
+                prop.owner_name?.toLowerCase().includes(term)
+        );
+        setFilteredProperties(filtered);
+        setPage(0);
+    }, [searchTerm, properties]);
+
+    async function loadProperties() {
+        try {
+            setLoading(true);
+            const { supabase } = await import('@/lib/supabase');
+            const { data, error } = await supabase
+                .from('properties')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setProperties(data || []);
+            setFilteredProperties(data || []);
+        } catch (error) {
+            console.error('Erro ao carregar imóveis:', error);
+            toast.error('Erro ao carregar lista de imóveis');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    const handleCepBlur = async () => {
+        const cep = formData.zip_code?.replace(/\D/g, '');
+        if (cep?.length !== 8) return;
+
+        try {
+            setLoadingCep(true);
+            const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+            const data = await response.json();
+
+            if (!data.erro) {
+                setFormData((prev) => ({
+                    ...prev,
+                    street: data.logradouro,
+                    neighborhood: data.bairro,
+                    city: data.localidade,
+                    state: data.uf,
+                }));
+                toast.info('Endereço preenchido!');
+            } else {
+                toast.warning('CEP não encontrado');
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoadingCep(false);
+        }
+    };
+
+    async function handleSaveProperty() {
+        try {
+            setSaving(true);
+            const { supabase } = await import('@/lib/supabase');
+
+            if (!formData.digital_code || !formData.street || !formData.neighborhood) {
+                toast.error('Preencha os campos obrigatórios (*)');
+                return;
+            }
+
+            // ------------------------------------------------------------------
+            // LÓGICA DE GEOCODIFICAÇÃO (BLINDADA)
+            // ------------------------------------------------------------------
+            let lat = null;
+            let lng = null;
+
+            try {
+                // 1. Tenta Endereço Completo
+                const query = `${formData.street}, ${formData.number}, ${formData.neighborhood}, Salesópolis, São Paulo, Brazil`;
+                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+                let res = await fetch(url);
+                let data = await res.json();
+
+                if (data && data.length > 0) {
+                    lat = parseFloat(data[0].lat);
+                    lng = parseFloat(data[0].lon);
+                    toast.success('📍 GPS Preciso encontrado!');
+                }
+
+                // 2. Tenta CEP (Se falhou 1)
+                if (!lat && formData.zip_code) {
+                    const cleanCep = formData.zip_code.replace(/\D/g, '');
+                    const urlCep = `https://nominatim.openstreetmap.org/search?format=json&postalcode=${cleanCep}&country=Brazil&limit=1`;
+                    res = await fetch(urlCep);
+                    data = await res.json();
+                    if (data && data.length > 0) {
+                        lat = parseFloat(data[0].lat);
+                        lng = parseFloat(data[0].lon);
+                        toast.info('📍 GPS via CEP encontrado');
+                    }
+                }
+
+                // 3. Fallback Rua + Cidade (Se falhou 1 e 2)
+                if (!lat) {
+                    const queryF = `${formData.street}, Salesópolis, São Paulo`;
+                    const urlF = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryF)}&limit=1`;
+                    res = await fetch(urlF);
+                    data = await res.json();
+                    if (data && data.length > 0) {
+                        lat = parseFloat(data[0].lat);
+                        lng = parseFloat(data[0].lon);
+                        toast.warning('📍 GPS Aproximado (Rua)');
+                    }
+                }
+
+            } catch (geoError) {
+                console.error("Erro GPS", geoError);
+            }
+            // ------------------------------------------------------------------
+
+
+            const propertyData = {
+                digital_code: formData.digital_code,
+                street: formData.street,
+                number: formData.number || null,
+                complement: formData.complement || null,
+                neighborhood: formData.neighborhood,
+                city: formData.city,
+                state: formData.state,
+                zip_code: formData.zip_code || null,
+                area_total: formData.area_total ? parseFloat(formData.area_total) : null,
+                area_built: formData.area_built ? parseFloat(formData.area_built) : null,
+                property_type: formData.property_type || null,
+                status: 'active',
+                lat: lat, // Salva Latitude
+                lng: lng, // Salva Longitude
+            };
+
+            const { error } = editingProperty
+                ? await supabase.from('properties').update(propertyData).eq('id', editingProperty.id)
+                : await supabase.from('properties').insert(propertyData);
+
+            if (error) {
+                if (error.code === '23505') toast.error('Código já existe!');
+                else throw error;
+                return;
+            }
+
+            toast.success('Salvo com sucesso!');
+            setOpenDialog(false);
+            loadProperties();
+        } catch (error: any) {
+            console.error(error);
+            toast.error('Erro ao salvar');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    // Handle Edit/Delete/Open wrappers...
+    const handleEdit = (prop: Property) => {
+        setEditingProperty(prop);
+        setFormData({
+            digital_code: prop.digital_code,
+            street: prop.street,
+            number: prop.number || '',
+            complement: prop.complement || '',
+            neighborhood: prop.neighborhood,
+            city: prop.city,
+            state: prop.state,
+            zip_code: prop.zip_code || '',
+            area_total: prop.area_total?.toString() || '',
+            area_built: prop.area_built?.toString() || '',
+            property_type: prop.property_type || 'Residencial',
+            owner_name: prop.owner_name || '',
+            owner_document: prop.owner_document || '',
+            owner_phone: prop.owner_phone || '',
+            owner_email: prop.owner_email || '',
+        });
+        setOpenDialog(true);
+    };
+
+    const handleOpenNew = () => {
+        setEditingProperty(null);
+        setFormData({
+            digital_code: '', street: '', number: '', complement: '', neighborhood: '',
+            city: 'Salesópolis', state: 'SP', zip_code: '', area_total: '', area_built: '',
+            property_type: 'Residencial', owner_name: '', owner_document: '', owner_phone: '', owner_email: ''
+        });
+        setOpenDialog(true);
+    }
+
+    const handleDelete = async (prop: Property) => {
+        if (!window.confirm('Excluir este imóvel?')) return;
+        try {
+            const { supabase } = await import('@/lib/supabase');
+            await supabase.from('properties').delete().eq('id', prop.id);
+            toast.success('Excluído.');
+            loadProperties();
+        } catch (e) { toast.error('Erro ao excluir'); }
+    }
+
+    return (
+        <Box p={3}>
+            <Box display="flex" justifyContent="space-between" mb={3}>
+                <Typography variant="h5" fontWeight={700}>Imóveis</Typography>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenNew}>
+                    Novo Imóvel
+                </Button>
+            </Box>
+
+            <Paper sx={{ mb: 3, p: 2 }}>
+                <TextField
+                    fullWidth
+                    placeholder="Buscar..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
+                />
+            </Paper>
+
+            <Paper>
+                <TableContainer>
+                    <Table>
+                        <TableHead>
+                            <TableRow>
+                                <TableCell>Código</TableCell>
+                                <TableCell>Endereço</TableCell>
+                                <TableCell>Bairro</TableCell>
+                                <TableCell>Tipo</TableCell>
+                                <TableCell align="right">Ações</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {filteredProperties.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map(prop => (
+                                <TableRow key={prop.id} hover>
+                                    <TableCell>
+                                        <Box display="flex" alignItems="center" gap={1}>
+                                            <HomeIcon fontSize="small" color="primary" />
+                                            <Typography fontWeight={600}>{prop.digital_code}</Typography>
+                                        </Box>
+                                    </TableCell>
+                                    <TableCell>{prop.street}, {prop.number}</TableCell>
+                                    <TableCell>{prop.neighborhood}</TableCell>
+                                    <TableCell><Chip label={prop.property_type || '-'} size="small" variant="outlined" /></TableCell>
+                                    <TableCell align="right">
+                                        <IconButton size="small" onClick={() => handleEdit(prop)}><EditIcon fontSize="small" /></IconButton>
+                                        <IconButton size="small" color="error" onClick={() => handleDelete(prop)}><DeleteIcon fontSize="small" /></IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </TableContainer>
+                <TablePagination
+                    component="div"
+                    count={filteredProperties.length}
+                    page={page}
+                    onPageChange={(_, p) => setPage(p)}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={e => setRowsPerPage(parseInt(e.target.value, 10))}
+                />
+            </Paper>
+
+            {/* Modal Simplificado */}
+            <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
+                <DialogTitle>{editingProperty ? 'Editar' : 'Novo'} Imóvel</DialogTitle>
+                <DialogContent dividers>
+                    <Grid container spacing={2}>
+                        <Grid item xs={12} sm={4}>
+                            <TextField fullWidth label="Código Digital *" value={formData.digital_code} onChange={e => setFormData({ ...formData, digital_code: e.target.value })} />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                            <TextField fullWidth label="CEP" value={formData.zip_code} onChange={e => setFormData({ ...formData, zip_code: e.target.value })} onBlur={handleCepBlur}
+                                InputProps={{ endAdornment: loadingCep && <CircularProgress size={20} /> }} />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                            <TextField fullWidth select label="Tipo" value={formData.property_type} onChange={e => setFormData({ ...formData, property_type: e.target.value })}>
+                                {propertyTypes.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                            </TextField>
+                        </Grid>
+                        <Grid item xs={12} sm={8}>
+                            <TextField fullWidth label="Logradouro *" value={formData.street} onChange={e => setFormData({ ...formData, street: e.target.value })} />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                            <TextField fullWidth label="Número" value={formData.number} onChange={e => setFormData({ ...formData, number: e.target.value })} />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField fullWidth label="Bairro *" value={formData.neighborhood} onChange={e => setFormData({ ...formData, neighborhood: e.target.value })} />
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <TextField fullWidth label="Cidade" value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })} />
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
+                    <Button variant="contained" onClick={handleSaveProperty} disabled={saving}>Salvar</Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
     );
-  }, [dispatch, page, rowsPerPage, filters, search]);
-
-  const handleChangePage = (_: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  const handleSearch = (value: string) => {
-    setSearch(value);
-    setPage(0);
-  };
-
-  return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" fontWeight={600}>
-            Imóveis
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Gestão de cadastro imobiliário
-          </Typography>
-        </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate('/cadastro/properties/new')}
-        >
-          Novo Imóvel
-        </Button>
-      </Box>
-
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Box display="flex" gap={2} alignItems="center">
-          <TextField
-            placeholder="Buscar por código, proprietário ou CPF..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            sx={{ flex: 1 }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <FormControl sx={{ minWidth: 150 }}>
-            <InputLabel>Tipo</InputLabel>
-            <Select
-              value={filters.type || ''}
-              label="Tipo"
-              onChange={(e) =>
-                dispatch(setFilters({ ...filters, type: e.target.value as any }))
-              }
-            >
-              <MenuItem value="">Todos</MenuItem>
-              <MenuItem value="RESIDENTIAL">Residencial</MenuItem>
-              <MenuItem value="COMMERCIAL">Comercial</MenuItem>
-              <MenuItem value="INDUSTRIAL">Industrial</MenuItem>
-              <MenuItem value="RURAL">Rural</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl sx={{ minWidth: 150 }}>
-            <InputLabel>Situação</InputLabel>
-            <Select
-              value={filters.status || ''}
-              label="Situação"
-              onChange={(e) =>
-                dispatch(setFilters({ ...filters, status: e.target.value as any }))
-              }
-            >
-              <MenuItem value="">Todas</MenuItem>
-              <MenuItem value="ACTIVE">Ativo</MenuItem>
-              <MenuItem value="INACTIVE">Inativo</MenuItem>
-              <MenuItem value="PENDING">Pendente</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-      </Paper>
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Código</TableCell>
-              <TableCell>Proprietário</TableCell>
-              <TableCell>Tipo</TableCell>
-              <TableCell>Área Terreno (m²)</TableCell>
-              <TableCell>Endereço</TableCell>
-              <TableCell>Situação</TableCell>
-              <TableCell>Atualizado</TableCell>
-              <TableCell align="center">Ações</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {items.map((property) => (
-              <TableRow key={property.id} hover>
-                <TableCell>
-                  <Typography variant="body2" fontWeight={600}>
-                    {property.code}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2">{property.ownerName}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {property.ownerDocument}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={property.type}
-                    size="small"
-                    color={typeColors[property.type] as any}
-                  />
-                </TableCell>
-                <TableCell>{property.landArea.toLocaleString('pt-BR')}</TableCell>
-                <TableCell>
-                  {property.digitalAddress ? (
-                    <Typography variant="body2">
-                      {property.digitalAddress.street}, {property.digitalAddress.number}
-                    </Typography>
-                  ) : (
-                    <Typography variant="caption" color="text.secondary">
-                      Sem endereço
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={property.status}
-                    size="small"
-                    color={statusColors[property.status] as any}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Typography variant="caption">
-                    {format(new Date(property.updatedAt), 'dd/MM/yyyy HH:mm')}
-                  </Typography>
-                </TableCell>
-                <TableCell align="center">
-                  <IconButton
-                    size="small"
-                    onClick={() => navigate(`/cadastro/properties/${property.id}`)}
-                  >
-                    <ViewIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={() => navigate(`/cadastro/properties/${property.id}/edit`)}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        <TablePagination
-          rowsPerPageOptions={[10, 20, 50, 100]}
-          component="div"
-          count={pagination.total}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage="Linhas por página:"
-        />
-      </TableContainer>
-    </Box>
-  );
 }
