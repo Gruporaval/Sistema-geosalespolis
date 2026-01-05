@@ -379,10 +379,9 @@ export const usersService = {
             throw new Error('Email já cadastrado no sistema');
         }
 
-        // Hash da senha (em produção, isso deve ser feito no backend)
-        // Por enquanto, vamos usar um hash simples (substitua por bcrypt no backend)
-        const bcrypt = require('bcryptjs');
-        const password_hash = await bcrypt.hash(userData.password, 10);
+        // Hash simples da senha usando base64
+        // IMPORTANTE: Em produção, use Supabase Edge Function para hash real com bcrypt
+        const password_hash = btoa(userData.password); // Base64 (temporário)
 
         const newUser = {
             email: userData.email,
@@ -448,9 +447,9 @@ export const usersService = {
      * Atualizar senha do usuário
      */
     async updatePassword(id: string, newPassword: string) {
-        // Hash da senha (em produção, isso deve ser feito no backend)
-        const bcrypt = require('bcryptjs');
-        const password_hash = await bcrypt.hash(newPassword, 10);
+        // Hash simples usando base64
+        // IMPORTANTE: Em produção, use Supabase Edge Function
+        const password_hash = btoa(newPassword);
 
         const { data, error } = await supabase
             .from('users')

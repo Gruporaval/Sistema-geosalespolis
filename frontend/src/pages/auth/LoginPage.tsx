@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -9,15 +9,12 @@ import {
   IconButton,
   CircularProgress,
   Alert,
-  Card,
-  useTheme,
-  alpha,
+  AlertTitle,
 } from '@mui/material';
 import {
   Visibility,
   VisibilityOff,
-  Login as LoginIcon,
-  Home as HomeIcon,
+  ErrorOutline,
 } from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -36,10 +33,20 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const theme = useTheme();
   const { mode } = useThemeMode();
   const { isLoading, error } = useAppSelector((state) => state.auth);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Define a cor de fundo do body baseado no tema
+  useEffect(() => {
+    const bodyBg = mode === 'light' ? '#f3f4f6' : '#000000';
+    document.body.style.backgroundColor = bodyBg;
+    document.body.style.transition = 'background-color 0.3s ease';
+
+    return () => {
+      document.body.style.backgroundColor = '';
+    };
+  }, [mode]);
 
   const {
     register,
@@ -63,6 +70,47 @@ export default function LoginPage() {
     }
   };
 
+  // Cores baseadas no tema
+  const colors = mode === 'light' ? {
+    bg: '#f3f4f6', // Cinza para o fundo
+    cardBg: '#ffffff',
+    cardBorder: '#e5e7eb',
+    titleColor: '#111827',
+    labelColor: '#374151',
+    inputBg: '#f9fafb',
+    inputBorder: '#d1d5db',
+    inputBorderHover: '#9ca3af',
+    inputBorderFocus: '#1976d2', // Azul no foco
+    inputText: '#111827',
+    placeholderColor: '#9ca3af',
+    buttonBg: '#1976d2', // Azul da paleta
+    buttonText: '#ffffff',
+    footerText: '#6b7280',
+    errorBg: '#fef2f2',
+    errorBorder: '#fecaca',
+    errorText: '#991b1b',
+    errorIcon: '#dc2626',
+  } : {
+    bg: '#000000',
+    cardBg: '#1a1a1a',
+    cardBorder: '#2a2a2a',
+    titleColor: '#ffffff',
+    labelColor: '#ffffff',
+    inputBg: '#0a0a0a',
+    inputBorder: '#2a2a2a',
+    inputBorderHover: '#3a3a3a',
+    inputBorderFocus: '#4a4a4a',
+    inputText: '#ffffff',
+    placeholderColor: '#666666',
+    buttonBg: '#e8dcc8',
+    buttonText: '#000000',
+    footerText: '#999999',
+    errorBg: '#2a1a1a',
+    errorBorder: '#3a2a2a',
+    errorText: '#ff6b6b',
+    errorIcon: '#ff8866',
+  };
+
   return (
     <Box
       sx={{
@@ -70,62 +118,90 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: mode === 'light'
-          ? 'linear-gradient(to bottom right, #f8fafc, #e2e8f0)'
-          : 'linear-gradient(to bottom right, #0f172a, #1e293b)',
+        background: colors.bg,
         p: 2,
       }}
     >
-      <Card
+      <Box
         sx={{
           width: '100%',
-          maxWidth: 420,
+          maxWidth: 400,
           p: 4,
-          borderRadius: 3,
-          boxShadow: mode === 'light'
-            ? '0 10px 40px rgba(0, 0, 0, 0.08)'
-            : '0 10px 40px rgba(0, 0, 0, 0.4)',
-          border: `1px solid ${mode === 'light' ? alpha(theme.palette.divider, 0.1) : alpha(theme.palette.divider, 0.2)}`,
+          borderRadius: 2,
+          background: colors.cardBg,
+          border: `1px solid ${colors.cardBorder}`,
         }}
       >
-        {/* Logo e Título */}
-        <Box sx={{ textAlign: 'center', mb: 4 }}>
-          <Box
+        {/* Header */}
+        <Box sx={{ mb: 4, textAlign: 'center' }}>
+          <Typography
+            variant="h5"
             sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 64,
-              height: 64,
-              borderRadius: 2,
-              background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
-              mb: 2,
+              color: colors.titleColor,
+              fontWeight: 700,
+              fontSize: '1.5rem',
             }}
           >
-            <HomeIcon sx={{ fontSize: 32, color: 'white' }} />
-          </Box>
-          <Typography variant="h5" fontWeight={700} gutterBottom>
-            Bem-vindo
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Entre com suas credenciais para continuar
+            Entrar na sua conta
           </Typography>
         </Box>
 
-        {/* Alertas */}
+        {/* Error Alert de Login */}
         {error && (
-          <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+          <Alert
+            severity="error"
+            icon={<ErrorOutline />}
+            sx={{
+              mb: 3,
+              backgroundColor: colors.errorBg,
+              color: colors.errorText,
+              border: `1px solid ${colors.errorBorder}`,
+              borderRadius: 1.5,
+              '& .MuiAlert-icon': {
+                color: colors.errorIcon,
+              },
+            }}
+          >
+            <AlertTitle sx={{ fontWeight: 600, fontSize: '0.875rem' }}>Erro ao fazer login</AlertTitle>
             {error}
           </Alert>
         )}
 
-        {/* Formulário */}
+        {/* Alerts de Validação */}
+        {(errors.email || errors.password) && (
+          <Alert
+            severity="error"
+            icon={<ErrorOutline />}
+            sx={{
+              mb: 3,
+              backgroundColor: colors.errorBg,
+              color: colors.errorText,
+              border: `1px solid ${colors.errorBorder}`,
+              borderRadius: 1.5,
+              '& .MuiAlert-icon': {
+                color: colors.errorIcon,
+              },
+            }}
+          >
+            <AlertTitle sx={{ fontWeight: 600, fontSize: '0.875rem' }}>Verifique os campos</AlertTitle>
+            {errors.email && <Box sx={{ fontSize: '0.813rem', mb: errors.password ? 0.5 : 0 }}>• {errors.email.message}</Box>}
+            {errors.password && <Box sx={{ fontSize: '0.813rem' }}>• {errors.password.message}</Box>}
+          </Alert>
+        )}
+
+        {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)}>
-          <Box sx={{ mb: 2 }}>
+          {/* Email */}
+          <Box sx={{ mb: 2.5 }}>
             <Typography
               variant="caption"
-              fontWeight={600}
-              sx={{ mb: 0.5, display: 'block', color: 'text.secondary' }}
+              sx={{
+                mb: 0.75,
+                display: 'block',
+                color: colors.labelColor,
+                fontSize: '0.875rem',
+                fontWeight: 500,
+              }}
             >
               Email
             </Typography>
@@ -135,22 +211,45 @@ export default function LoginPage() {
               fullWidth
               placeholder="seu@email.com"
               error={!!errors.email}
-              helperText={errors.email?.message}
               autoComplete="email"
               autoFocus
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
+                  color: colors.inputText,
+                  backgroundColor: colors.inputBg,
+                  borderRadius: 1,
+                  '& fieldset': {
+                    borderColor: errors.email ? colors.errorIcon : colors.inputBorder,
+                  },
+                  '&:hover fieldset': {
+                    borderColor: errors.email ? colors.errorIcon : colors.inputBorderHover,
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: errors.email ? colors.errorIcon : colors.inputBorderFocus,
+                  },
+                },
+                '& .MuiInputBase-input': {
+                  color: colors.inputText,
+                  '&::placeholder': {
+                    color: colors.placeholderColor,
+                    opacity: 1,
+                  },
                 },
               }}
             />
           </Box>
 
+          {/* Password */}
           <Box sx={{ mb: 3 }}>
             <Typography
               variant="caption"
-              fontWeight={600}
-              sx={{ mb: 0.5, display: 'block', color: 'text.secondary' }}
+              sx={{
+                color: colors.labelColor,
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                mb: 0.75,
+                display: 'block',
+              }}
             >
               Senha
             </Typography>
@@ -160,7 +259,6 @@ export default function LoginPage() {
               fullWidth
               placeholder="••••••••"
               error={!!errors.password}
-              helperText={errors.password?.message}
               autoComplete="current-password"
               InputProps={{
                 endAdornment: (
@@ -169,6 +267,7 @@ export default function LoginPage() {
                       onClick={() => setShowPassword(!showPassword)}
                       edge="end"
                       size="small"
+                      sx={{ color: colors.placeholderColor }}
                     >
                       {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
                     </IconButton>
@@ -177,32 +276,56 @@ export default function LoginPage() {
               }}
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
+                  color: colors.inputText,
+                  backgroundColor: colors.inputBg,
+                  borderRadius: 1,
+                  '& fieldset': {
+                    borderColor: errors.password ? colors.errorIcon : colors.inputBorder,
+                  },
+                  '&:hover fieldset': {
+                    borderColor: errors.password ? colors.errorIcon : colors.inputBorderHover,
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: errors.password ? colors.errorIcon : colors.inputBorderFocus,
+                  },
+                },
+                '& .MuiInputBase-input': {
+                  color: colors.inputText,
+                  '&::placeholder': {
+                    color: colors.placeholderColor,
+                    opacity: 1,
+                  },
                 },
               }}
             />
           </Box>
 
+          {/* Login Button */}
           <Button
             type="submit"
             variant="contained"
             fullWidth
-            size="large"
             disabled={isLoading}
-            startIcon={isLoading ? <CircularProgress size={18} color="inherit" /> : <LoginIcon />}
             sx={{
               py: 1.25,
-              borderRadius: 2,
-              fontSize: '0.9375rem',
+              borderRadius: 1,
+              fontSize: '0.938rem',
               fontWeight: 600,
               textTransform: 'none',
+              backgroundColor: colors.buttonBg,
+              color: colors.buttonText,
               boxShadow: 'none',
               '&:hover': {
+                backgroundColor: mode === 'light' ? '#1565c0' : '#f0e8d8',
                 boxShadow: 'none',
+              },
+              '&:disabled': {
+                backgroundColor: '#a8a8a8',
+                color: '#666666',
               },
             }}
           >
-            {isLoading ? 'Entrando...' : 'Entrar'}
+            {isLoading ? <CircularProgress size={20} sx={{ color: colors.buttonText }} /> : 'Entrar'}
           </Button>
         </form>
 
@@ -211,43 +334,38 @@ export default function LoginPage() {
           sx={{
             mt: 4,
             pt: 3,
-            borderTop: `1px solid ${theme.palette.divider}`,
+            borderTop: `1px solid ${colors.cardBorder}`,
           }}
         >
-          <Typography variant="caption" color="text.secondary" display="block" textAlign="center" gutterBottom>
-            Credenciais de demonstração
+          <Typography
+            variant="caption"
+            color={colors.footerText}
+            display="block"
+            textAlign="center"
+            gutterBottom
+            sx={{ fontSize: '0.688rem', fontWeight: 600, mb: 1.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}
+          >
+            Credenciais de teste
           </Typography>
           <Box
             sx={{
-              mt: 1.5,
               p: 2,
-              borderRadius: 2,
-              background: mode === 'light'
-                ? alpha(theme.palette.primary.main, 0.04)
-                : alpha(theme.palette.primary.main, 0.08),
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+              borderRadius: 1.5,
+              background: colors.inputBg,
+              border: `1px solid ${colors.cardBorder}`,
             }}
           >
-            <Typography variant="caption" fontFamily="monospace" display="block" sx={{ mb: 0.5 }}>
-              <strong>Email:</strong> admin@salesopolis.sp.gov.br
+            <Typography variant="caption" fontFamily="'Consolas', monospace" display="block" sx={{ mb: 0.5, fontSize: '0.75rem', color: colors.inputText }}>
+              <Box component="span" sx={{ color: colors.footerText, mr: 1 }}>Email:</Box>
+              <Box component="span" sx={{ color: colors.inputText, fontWeight: 500 }}>admin@salesopolis.sp.gov.br</Box>
             </Typography>
-            <Typography variant="caption" fontFamily="monospace" display="block">
-              <strong>Senha:</strong> admin123
+            <Typography variant="caption" fontFamily="'Consolas', monospace" display="block" sx={{ fontSize: '0.75rem', color: colors.inputText }}>
+              <Box component="span" sx={{ color: colors.footerText, mr: 1 }}>Senha:</Box>
+              <Box component="span" sx={{ color: colors.inputText, fontWeight: 500 }}>admin123</Box>
             </Typography>
           </Box>
         </Box>
-
-        {/* Footer */}
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          display="block"
-          textAlign="center"
-          sx={{ mt: 3 }}
-        >
-          © 2025 Prefeitura de Salesópolis
-        </Typography>
-      </Card>
+      </Box>
     </Box>
   );
 }

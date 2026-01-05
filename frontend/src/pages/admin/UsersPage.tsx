@@ -120,11 +120,15 @@ export default function UsersPage() {
   const handleOpenCreate = () => {
     setDialogMode('create');
     setSelectedUser(null);
+
+    // Busca o role de Administrador automaticamente
+    const adminRole = roles.find(r => r.name === 'Administrador') || roles[0];
+
     setFormData({
       name: '',
       email: '',
       password: '',
-      role_id: roles[0]?.id || '',
+      role_id: adminRole?.id || '',
       is_active: true,
     });
     setDialogOpen(true);
@@ -165,19 +169,23 @@ export default function UsersPage() {
   const handleSave = async () => {
     try {
       if (dialogMode === 'create') {
-        // Criar novo usuário
+        // Criar novo usuário como ADMINISTRADOR
         if (!formData.password) {
           showSnackbar('Senha é obrigatória', 'error');
           return;
         }
+
+        // Garante que está criando como Administrador
+        const adminRole = roles.find(r => r.name === 'Administrador') || roles[0];
+
         await usersService.create({
           email: formData.email,
           password: formData.password,
           name: formData.name,
-          role_id: formData.role_id,
+          role_id: adminRole?.id || formData.role_id,
           is_active: formData.is_active,
         });
-        showSnackbar('Usuário criado com sucesso!', 'success');
+        showSnackbar('Usuário administrador criado com sucesso!', 'success');
       } else if (dialogMode === 'edit' && selectedUser) {
         // Atualizar usuário
         await usersService.update(selectedUser.id, {
@@ -467,22 +475,31 @@ export default function UsersPage() {
                       : 'Deixe em branco para manter a senha atual'
                   }
                 />
-                <FormControl fullWidth>
-                  <InputLabel>Perfil</InputLabel>
-                  <Select
-                    value={formData.role_id}
-                    label="Perfil"
-                    onChange={(e) =>
-                      setFormData({ ...formData, role_id: e.target.value })
-                    }
-                  >
-                    {roles.map((role) => (
-                      <MenuItem key={role.id} value={role.id}>
-                        {role.description || role.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {/* Campo de Perfil - APENAS NO MODO EDIT */}
+                {dialogMode === 'edit' && (
+                  <FormControl fullWidth>
+                    <InputLabel>Perfil</InputLabel>
+                    <Select
+                      value={formData.role_id}
+                      label="Perfil"
+                      onChange={(e) =>
+                        setFormData({ ...formData, role_id: e.target.value })
+                      }
+                    >
+                      {roles.map((role) => (
+                        <MenuItem key={role.id} value={role.id}>
+                          {role.description || role.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+                {/* Info para modo CREATE */}
+                {dialogMode === 'create' && (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    <strong>Perfil:</strong> O usuário será criado como <strong>Administrador</strong> automaticamente.
+                  </Alert>
+                )}
                 <FormControl fullWidth>
                   <InputLabel>Status</InputLabel>
                   <Select
