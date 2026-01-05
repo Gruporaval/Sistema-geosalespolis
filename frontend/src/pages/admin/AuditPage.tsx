@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,16 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  CircularProgress,
+  Alert,
+  Snackbar,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -24,111 +34,73 @@ import {
   Warning as WarningIcon,
   Error as ErrorIcon,
   CheckCircle as SuccessIcon,
+  Visibility as VisibilityIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
-
-interface AuditLog {
-  id: number;
-  timestamp: string;
-  user: string;
-  action: string;
-  module: string;
-  details: string;
-  ip: string;
-  level: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS';
-}
-
-const mockAuditLogs: AuditLog[] = [
-  {
-    id: 1,
-    timestamp: '2025-12-24 14:35:22',
-    user: 'Administrador Demo',
-    action: 'LOGIN',
-    module: 'Autenticação',
-    details: 'Login realizado com sucesso',
-    ip: '192.168.1.100',
-    level: 'SUCCESS',
-  },
-  {
-    id: 2,
-    timestamp: '2025-12-24 14:30:15',
-    user: 'Maria Silva',
-    action: 'CADASTRO_IMOVEL',
-    module: 'Cadastro',
-    details: 'Novo imóvel cadastrado - Código: 12345',
-    ip: '192.168.1.101',
-    level: 'INFO',
-  },
-  {
-    id: 3,
-    timestamp: '2025-12-24 14:25:08',
-    user: 'João Santos',
-    action: 'ALTERACAO_ENDERECO',
-    module: 'Endereçamento',
-    details: 'Endereço SP-SAL-001-0001 atualizado',
-    ip: '192.168.1.102',
-    level: 'INFO',
-  },
-  {
-    id: 4,
-    timestamp: '2025-12-24 14:20:45',
-    user: 'Sistema',
-    action: 'BACKUP',
-    module: 'Sistema',
-    details: 'Backup automático realizado',
-    ip: '127.0.0.1',
-    level: 'SUCCESS',
-  },
-  {
-    id: 5,
-    timestamp: '2025-12-24 14:15:33',
-    user: 'Carlos Oliveira',
-    action: 'LOGIN_FAILED',
-    module: 'Autenticação',
-    details: 'Tentativa de login falhou - Senha incorreta',
-    ip: '192.168.1.105',
-    level: 'WARNING',
-  },
-  {
-    id: 6,
-    timestamp: '2025-12-24 14:10:20',
-    user: 'Ana Costa',
-    action: 'CONSULTA_DADOS',
-    module: 'Privacidade',
-    details: 'Consulta a dados públicos agregados',
-    ip: '192.168.1.103',
-    level: 'INFO',
-  },
-  {
-    id: 7,
-    timestamp: '2025-12-24 14:05:10',
-    user: 'Sistema',
-    action: 'INTEGRACAO_ERRO',
-    module: 'Integração',
-    details: 'Falha na sincronização com sistema externo',
-    ip: '127.0.0.1',
-    level: 'ERROR',
-  },
-];
+import { auditService, type AuditLog } from '../../lib/supabase';
 
 export default function AuditPage() {
+  // Estados
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterLevel, setFilterLevel] = useState<string>('ALL');
-  const [filterModule, setFilterModule] = useState<string>('ALL');
+  const [filterEntityType, setFilterEntityType] = useState<string>('ALL');
 
-  const filteredLogs = mockAuditLogs.filter((log) => {
-    const matchesSearch =
-      log.user.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesLevel = filterLevel === 'ALL' || log.level === filterLevel;
-    const matchesModule = filterModule === 'ALL' || log.module === filterModule;
+  // Estados do diálogo de detalhes
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
-    return matchesSearch && matchesLevel && matchesModule;
+  // Estados de feedback
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error' | 'info' | 'warning',
   });
 
+  // Carregar dados
+  useEffect(() => {
+    loadLogs();
+  }, [page, rowsPerPage, filterEntityType]);
+
+  const loadLogs = async () => {
+    try {
+      setLoading(true);
+
+      // Buscar logs com filtros e paginação
+      const [logsData, count] = await Promise.all([
+        auditService.getAll({
+          limit: rowsPerPage,
+          offset: page * rowsPerPage,
+          entity_type: filterEntityType !== 'ALL' ? filterEntityType : undefined,
+          action: searchTerm || undefined,
+        }),
+        auditService.count({
+          entity_type: filterEntityType !== 'ALL' ? filterEntityType : undefined,
+          action: searchTerm || undefined,
+        }),
+      ]);
+
+      setLogs(logsData || []);
+      setTotalCount(count);
+    } catch (error: any) {
+      showSnackbar(error.message || 'Erro ao carregar logs', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showSnackbar = (message: string, severity: typeof snackbar.severity) => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
+  // Paginação
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
   };
@@ -138,152 +110,204 @@ export default function AuditPage() {
     setPage(0);
   };
 
-  const getLevelIcon = (level: AuditLog['level']) => {
-    switch (level) {
-      case 'INFO':
-        return <InfoIcon fontSize="small" color="info" />;
-      case 'WARNING':
-        return <WarningIcon fontSize="small" color="warning" />;
-      case 'ERROR':
-        return <ErrorIcon fontSize="small" color="error" />;
-      case 'SUCCESS':
-        return <SuccessIcon fontSize="small" color="success" />;
+  // Detalhes
+  const handleOpenDetails = (log: AuditLog) => {
+    setSelectedLog(log);
+    setDetailsDialogOpen(true);
+  };
+
+  const handleCloseDetails = () => {
+    setDetailsDialogOpen(false);
+    setSelectedLog(null);
+  };
+
+  // Busca
+  const handleSearch = () => {
+    setPage(0);
+    loadLogs();
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
     }
   };
 
-  const getLevelColor = (level: AuditLog['level']) => {
-    switch (level) {
-      case 'INFO':
-        return 'info';
-      case 'WARNING':
-        return 'warning';
-      case 'ERROR':
-        return 'error';
-      case 'SUCCESS':
-        return 'success';
+  // Helpers
+  const getActionColor = (action: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
+    const actionLower = action.toLowerCase();
+    if (actionLower.includes('create') || actionLower.includes('insert') || actionLower.includes('cadastro')) return 'success';
+    if (actionLower.includes('update') || actionLower.includes('edit') || actionLower.includes('alteracao')) return 'info';
+    if (actionLower.includes('delete') || actionLower.includes('remove') || actionLower.includes('exclusao')) return 'error';
+    if (actionLower.includes('login') || actionLower.includes('logout')) return 'primary';
+    if (actionLower.includes('error') || actionLower.includes('fail')) return 'error';
+    return 'default';
+  };
+
+  const getActionIcon = (action: string) => {
+    const color = getActionColor(action);
+    switch (color) {
+      case 'success':
+        return <SuccessIcon fontSize="small" color={color} />;
+      case 'error':
+        return <ErrorIcon fontSize="small" color={color} />;
+      case 'warning':
+        return <WarningIcon fontSize="small" color={color} />;
       default:
-        return 'default';
+        return <InfoIcon fontSize="small" color="info" />;
     }
   };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('pt-BR');
+  };
+
+  const getUserName = (log: any) => {
+    if (log.user?.name) return log.user.name;
+    if (log.user_id) return `ID: ${log.user_id}`;
+    return 'Sistema';
+  };
+
+  if (loading && logs.length === 0) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>
-      <Box mb={3}>
-        <Typography variant="h4" fontWeight={600} gutterBottom>
-          Auditoria do Sistema
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Registro completo de todas as ações realizadas no sistema
-        </Typography>
+      {/* Header */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Box>
+          <Typography variant="h4" fontWeight={600} gutterBottom>
+            Auditoria do Sistema
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Registro completo de todas as ações realizadas no sistema
+          </Typography>
+        </Box>
+        <Tooltip title="Atualizar">
+          <IconButton onClick={loadLogs} color="primary">
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
       </Box>
 
+      {/* Filtros */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Box display="flex" gap={2}>
           <TextField
             fullWidth
-            placeholder="Buscar por usuário, ação ou detalhes..."
+            placeholder="Buscar por ação..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyPress={handleKeyPress}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
                   <SearchIcon />
                 </InputAdornment>
               ),
+              endAdornment: (
+                <Button onClick={handleSearch} variant="contained" size="small">
+                  Buscar
+                </Button>
+              ),
             }}
           />
-          <FormControl sx={{ minWidth: 150 }}>
-            <InputLabel>Nível</InputLabel>
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel>Tipo de Entidade</InputLabel>
             <Select
-              value={filterLevel}
-              onChange={(e) => setFilterLevel(e.target.value)}
-              label="Nível"
+              value={filterEntityType}
+              onChange={(e) => setFilterEntityType(e.target.value)}
+              label="Tipo de Entidade"
             >
               <MenuItem value="ALL">Todos</MenuItem>
-              <MenuItem value="INFO">Info</MenuItem>
-              <MenuItem value="SUCCESS">Sucesso</MenuItem>
-              <MenuItem value="WARNING">Aviso</MenuItem>
-              <MenuItem value="ERROR">Erro</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl sx={{ minWidth: 150 }}>
-            <InputLabel>Módulo</InputLabel>
-            <Select
-              value={filterModule}
-              onChange={(e) => setFilterModule(e.target.value)}
-              label="Módulo"
-            >
-              <MenuItem value="ALL">Todos</MenuItem>
-              <MenuItem value="Autenticação">Autenticação</MenuItem>
-              <MenuItem value="Cadastro">Cadastro</MenuItem>
-              <MenuItem value="Endereçamento">Endereçamento</MenuItem>
-              <MenuItem value="Privacidade">Privacidade</MenuItem>
-              <MenuItem value="Sistema">Sistema</MenuItem>
-              <MenuItem value="Integração">Integração</MenuItem>
+              <MenuItem value="users">Usuários</MenuItem>
+              <MenuItem value="properties">Imóveis</MenuItem>
+              <MenuItem value="addresses">Endereços</MenuItem>
+              <MenuItem value="support_tickets">Tickets</MenuItem>
+              <MenuItem value="roles">Perfis</MenuItem>
             </Select>
           </FormControl>
         </Box>
       </Paper>
 
+      {/* Tabela */}
       <Paper>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
                 <TableCell>Data/Hora</TableCell>
-                <TableCell>Nível</TableCell>
                 <TableCell>Usuário</TableCell>
                 <TableCell>Ação</TableCell>
-                <TableCell>Módulo</TableCell>
-                <TableCell>Detalhes</TableCell>
+                <TableCell>Tipo</TableCell>
                 <TableCell>IP</TableCell>
+                <TableCell align="right">Detalhes</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredLogs
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((log) => (
-                  <TableRow key={log.id} hover>
-                    <TableCell>
+              {logs.map((log) => (
+                <TableRow key={log.id} hover>
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatDate(log.created_at)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={500}>
+                      {getUserName(log)}
+                    </Typography>
+                    {(log as any).user?.email && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {(log as any).user.email}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      {getActionIcon(log.action)}
+                      <Chip
+                        label={log.action}
+                        color={getActionColor(log.action)}
+                        size="small"
+                        variant="outlined"
+                      />
+                    </Box>
+                  </TableCell>
+                  <TableCell>
+                    {log.entity_type ? (
+                      <Chip label={log.entity_type} size="small" variant="outlined" />
+                    ) : (
                       <Typography variant="caption" color="text.secondary">
-                        {log.timestamp}
+                        -
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box display="flex" alignItems="center" gap={1}>
-                        {getLevelIcon(log.level)}
-                        <Chip
-                          label={log.level}
-                          color={getLevelColor(log.level)}
-                          size="small"
-                        />
-                      </Box>
-                    </TableCell>
-                    <TableCell>{log.user}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={500}>
-                        {log.action}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={log.module} size="small" variant="outlined" />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption">{log.details}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {log.ip}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">
+                      {log.ip_address || '-'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="Ver Detalhes">
+                      <IconButton size="small" onClick={() => handleOpenDetails(log)}>
+                        <VisibilityIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </TableContainer>
         <TablePagination
           component="div"
-          count={filteredLogs.length}
+          count={totalCount}
           page={page}
           onPageChange={handleChangePage}
           rowsPerPage={rowsPerPage}
@@ -292,6 +316,134 @@ export default function AuditPage() {
           labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
         />
       </Paper>
+
+      {/* Dialog de Detalhes */}
+      <Dialog open={detailsDialogOpen} onClose={handleCloseDetails} maxWidth="md" fullWidth>
+        <DialogTitle>Detalhes do Log de Auditoria</DialogTitle>
+        <DialogContent>
+          {selectedLog && (
+            <Box sx={{ pt: 2 }}>
+              <Box mb={2}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Data/Hora
+                </Typography>
+                <Typography variant="body1">{formatDate(selectedLog.created_at)}</Typography>
+              </Box>
+
+              <Box mb={2}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Usuário
+                </Typography>
+                <Typography variant="body1">{getUserName(selectedLog)}</Typography>
+              </Box>
+
+              <Box mb={2}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Ação
+                </Typography>
+                <Chip
+                  label={selectedLog.action}
+                  color={getActionColor(selectedLog.action)}
+                  size="small"
+                />
+              </Box>
+
+              {selectedLog.entity_type && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Tipo de Entidade
+                  </Typography>
+                  <Typography variant="body1">{selectedLog.entity_type}</Typography>
+                </Box>
+              )}
+
+              {selectedLog.entity_id && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    ID da Entidade
+                  </Typography>
+                  <Typography variant="body1" fontFamily="monospace">
+                    {selectedLog.entity_id}
+                  </Typography>
+                </Box>
+              )}
+
+              {selectedLog.old_values && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Valores Anteriores
+                  </Typography>
+                  <Paper
+                    variant="outlined"
+                    sx={{ p: 2, bgcolor: 'grey.50', overflow: 'auto' }}
+                  >
+                    <pre style={{ margin: 0, fontSize: '0.875rem' }}>
+                      {JSON.stringify(selectedLog.old_values, null, 2)}
+                    </pre>
+                  </Paper>
+                </Box>
+              )}
+
+              {selectedLog.new_values && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Novos Valores
+                  </Typography>
+                  <Paper
+                    variant="outlined"
+                    sx={{ p: 2, bgcolor: 'grey.50', overflow: 'auto' }}
+                  >
+                    <pre style={{ margin: 0, fontSize: '0.875rem' }}>
+                      {JSON.stringify(selectedLog.new_values, null, 2)}
+                    </pre>
+                  </Paper>
+                </Box>
+              )}
+
+              {selectedLog.ip_address && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Endereço IP
+                  </Typography>
+                  <Typography variant="body1" fontFamily="monospace">
+                    {selectedLog.ip_address}
+                  </Typography>
+                </Box>
+              )}
+
+              {selectedLog.user_agent && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    User Agent
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {selectedLog.user_agent}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDetails}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

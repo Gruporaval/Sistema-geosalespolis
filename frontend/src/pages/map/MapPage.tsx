@@ -117,6 +117,28 @@ export default function MapPage() {
       document.head.appendChild(link);
     }
 
+    // Adicionar estilos customizados para tooltips
+    if (!document.getElementById('custom-tooltip-styles')) {
+      const style = document.createElement('style');
+      style.id = 'custom-tooltip-styles';
+      style.textContent = `
+        .custom-tooltip {
+          background: white !important;
+          border: none !important;
+          border-radius: 12px !important;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+          padding: 12px 16px !important;
+        }
+        .custom-tooltip::before {
+          border-top-color: white !important;
+        }
+        .leaflet-tooltip-top:before {
+          border-top-color: white !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     const init = async () => {
       if (!(window as any).L) {
         await new Promise<void>((resolve) => {
@@ -239,11 +261,56 @@ export default function MapPage() {
           let foundLat = null;
           let foundLng = null;
 
-          // 1. Tentar endereço exato
+          // 1. Tentar endereço SUPER COMPLETO (MÁXIMA PRECISÃO)
           if (!foundLat) {
-            const query = `${prop.street}, ${prop.number || ''}, Salesópolis, São Paulo, Brazil`;
-            // Usar Nominatim (Free)
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+            const city = prop.city || 'Salesópolis';
+            const state = prop.state || 'São Paulo';
+            const neighborhood = prop.neighborhood || '';
+            const number = prop.number || '';
+
+            // SUPER NORMALIZAÇÃO do nome da rua
+            let streetClean = prop.street
+              .replace(/^(Rua|Av\.|Avenida|Travessa|Praça|Alameda|Estrada)\s+/i, '') // Remove prefixos
+              .replace(/Casa|Apto|Apartamento|Bloco/gi, '') // Remove Casa, Apto, etc
+              .replace(/\./g, ' ') // Pontos viram espaços
+              .replace(/\s+/g, ' ') // Múltiplos espaços viram um
+              .trim();
+
+            //Try variações: original, limpo, sem espaços, com "Rua"
+            const streetVariations = [
+              prop.street, // Original
+              streetClean, // Limpo
+              streetClean.replace(/\s/g, ''), // Sem espaços: "15ACasa"
+              `Rua ${streetClean}`, // Com Rua
+              `Avenida ${streetClean}`, // Com Avenida
+              streetClean.replace(/[^a-zA-Z0-9\s]/g, '').trim(), // Apenas alfanumérico
+            ];
+
+            for (const street of streetVariations) {
+              if (foundLat || !street) break;
+
+              // Busca MUITO específica com estado completo
+              const query = `${street}${number ? ', ' + number : ''}, ${neighborhood}, ${city}, ${state}, Brasil`;
+              const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&countrycodes=br`;
+              try {
+                const res = await fetch(url);
+                const d = await res.json();
+                if (d && d.length > 0) {
+                  foundLat = parseFloat(d[0].lat);
+                  foundLng = parseFloat(d[0].lon);
+                  break;
+                }
+              } catch (e) { }
+            }
+          }
+
+          // 2. Tentar só rua + número + cidade + estado (sem bairro)
+          if (!foundLat) {
+            const city = prop.city || 'Salesópolis';
+            const state = prop.state || 'SP';
+            const number = prop.number || '';
+            const query = `${prop.street}${number ? ' ' + number : ''}, ${city}, ${state}, Brasil`;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&countrycodes=br`;
             try {
               const res = await fetch(url);
               const d = await res.json();
@@ -254,7 +321,7 @@ export default function MapPage() {
             } catch (e) { }
           }
 
-          // 2. Tentar CEP
+          // 3. Tentar CEP
           if (!foundLat && prop.zip_code) {
             const cleanCep = prop.zip_code.replace(/\D/g, '');
             const urlCep = `https://nominatim.openstreetmap.org/search?format=json&postalcode=${cleanCep}&country=Brazil&limit=1`;
@@ -268,10 +335,12 @@ export default function MapPage() {
             } catch (e) { }
           }
 
-          // 3. Fallback Cidade
+          // 4. Fallback final: só cidade e estado
           if (!foundLat) {
-            const queryF = `${prop.street}, Salesópolis, São Paulo`;
-            const urlF = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryF)}&limit=1`;
+            const city = prop.city || 'Salesópolis';
+            const state = prop.state || 'SP';
+            const queryF = `${city}, ${state}, Brasil`;
+            const urlF = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryF)}&limit=1&countrycodes=br`;
             try {
               const res = await fetch(urlF);
               const d = await res.json();
@@ -307,22 +376,83 @@ export default function MapPage() {
     properties.forEach(prop => {
       if (!prop.lat || !prop.lng) return;
 
+      // Cores vibrantes por tipo de imóvel
+      const pinColors: Record<string, string> = {
+        'Residencial': '#FF6B6B',
+        'Comercial': '#4ECDC4',
+        'Industrial': '#FFE66D',
+        'Rural': '#95E1D3',
+        'Público': '#A8E6CF',
+      };
+      const color = pinColors[prop.property_type] || '#667EEA';
+
       const marker = L.marker([prop.lat, prop.lng], {
         icon: L.divIcon({
           className: 'custom-pin',
           html: `
             <div style="
-              background-color: ${prop.property_type === 'Comercial' ? '#0288d1' : prop.property_type === 'Industrial' ? '#ed6c02' : '#1976d2'}; 
-              width: 14px; height: 14px; 
-              border-radius: 50%; 
-              border: 2px solid white; 
-              box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-            "></div>
+              position: relative;
+              width: 24px;
+              height: 32px;
+              filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            ">
+              <!-- Pin Shape (SEM ANIMAÇÃO) -->
+              <div style="
+                position: absolute;
+                width: 24px;
+                height: 24px;
+                background: ${color};
+                border-radius: 50% 50% 50% 0;
+                transform: rotate(-45deg);
+                border: 2px solid white;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+              "></div>
+              
+              <!-- Ponto central branco -->
+              <div style="
+                position: absolute;
+                top: 7px;
+                left: 7px;
+                width: 10px;
+                height: 10px;
+                background: white;
+                border-radius: 50%;
+                z-index: 10;
+              "></div>
+            </div>
           `,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7]
+          iconSize: [24, 32],
+          iconAnchor: [12, 32],
+          popupAnchor: [0, -28]
         })
       }).addTo(map);
+
+      // POPUP AO PASSAR O MOUSE (TOOLTIP)
+      const tooltipContent = `
+        <div style="font-family: system-ui, sans-serif; min-width: 200px;">
+          <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px; color: ${color};">
+            ${prop.property_type || 'Imóvel'}
+          </div>
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">
+            ${prop.street}, ${prop.number || 'S/N'}
+          </div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 4px;">
+            ${prop.neighborhood} - ${prop.city}/${prop.state}
+          </div>
+          ${prop.zip_code ? `<div style="font-size: 11px; color: #999;">CEP: ${prop.zip_code}</div>` : ''}
+          <div style="font-size: 10px; color: #999; margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee;">
+            Código: ${prop.digital_code}
+          </div>
+        </div>
+      `;
+
+      marker.bindTooltip(tooltipContent, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -10],
+        opacity: 0.95,
+        className: 'custom-tooltip'
+      });
 
       marker.on('click', () => {
         setIsPanelOpen(true);
@@ -344,21 +474,40 @@ export default function MapPage() {
         marker.setIcon(L.divIcon({
           className: 'selected-pin',
           html: `
+            <div style="
+              position: relative;
+              width: 32px;
+              height: 42px;
+              filter: drop-shadow(0 4px 8px rgba(216, 27, 96, 0.5));
+            ">
+              <!-- Pin Rosa Simples (SEM ANIMAÇÃO) -->
               <div style="
-                background-color: #d81b60; 
-                width: 40px; height: 40px; 
-                border-radius: 50% 50% 50% 0; 
-                transform: rotate(-45deg); 
-                border: 3px solid white; 
-                box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
-                display: flex; align-items: center; justify-content: center;
-              ">
-                 <div style="width: 14px; height: 14px; background: white; border-radius: 50%;"></div>
-              </div>
-            `,
-          iconSize: [40, 40],
-          iconAnchor: [20, 40],
-          popupAnchor: [0, -35]
+                position: absolute;
+                width: 32px;
+                height: 32px;
+                background: #FF1744;
+                border-radius: 50% 50% 50% 0;
+                transform: rotate(-45deg);
+                border: 3px solid white;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+              "></div>
+              
+              <!-- Ponto central branco -->
+              <div style="
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                width: 12px;
+                height: 12px;
+                background: white;
+                border-radius: 50%;
+                z-index: 10;
+              "></div>
+            </div>
+          `,
+          iconSize: [32, 42],
+          iconAnchor: [16, 42],
+          popupAnchor: [0, -38]
         }));
         mapInstanceRef.current.flyTo(marker.getLatLng(), 18, { animate: true, duration: 1.2 });
       }

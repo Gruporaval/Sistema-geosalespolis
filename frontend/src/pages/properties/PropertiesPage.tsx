@@ -26,7 +26,9 @@ import {
     Chip,
     Checkbox,
     FormControlLabel,
-    TablePagination
+    TablePagination,
+    Autocomplete,
+    Alert
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -36,6 +38,7 @@ import {
     Visibility as ViewIcon,
     Close as CloseIcon,
     Home as HomeIcon,
+    LocationOn as LocationIcon,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 
@@ -61,12 +64,25 @@ interface Property {
     lng?: number; // Adicionado para Geo
 }
 
+interface Address {
+    id: string;
+    digital_code: string;
+    street: string;
+    number?: string;
+    complement?: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+    zip_code: string;
+}
+
 // ... Tipos de imóvel e status (simplificado para economia de tokens, mas mantendo funcionalidade)
 const propertyTypes = ['Residencial', 'Comercial', 'Industrial', 'Rural', 'Público', 'Misto'];
 
 export default function PropertiesPage() {
     const [loading, setLoading] = useState(true);
     const [properties, setProperties] = useState<Property[]>([]);
+    const [addresses, setAddresses] = useState<Address[]>([]);
     const [filteredProperties, setFilteredProperties] = useState<Property[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [page, setPage] = useState(0);
@@ -75,7 +91,7 @@ export default function PropertiesPage() {
     const [editingProperty, setEditingProperty] = useState<Property | null>(null);
     const [saving, setSaving] = useState(false);
     const [loadingCep, setLoadingCep] = useState(false);
-    const [useExistingAddress, setUseExistingAddress] = useState(false);
+    const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -98,6 +114,7 @@ export default function PropertiesPage() {
 
     useEffect(() => {
         loadProperties();
+        loadAddresses();
     }, []);
 
     useEffect(() => {
@@ -132,6 +149,42 @@ export default function PropertiesPage() {
             setLoading(false);
         }
     }
+
+    async function loadAddresses() {
+        try {
+            const { supabase } = await import('@/lib/supabase');
+            const { data, error } = await supabase
+                .from('addresses')
+                .select('*')
+                .eq('status', 'active')
+                .order('street', { ascending: true });
+
+            if (error) throw error;
+            setAddresses(data || []);
+        } catch (error) {
+            console.error('Erro ao carregar endereços:', error);
+        }
+    }
+
+    const handleAddressSelect = (address: Address | null) => {
+        if (!address) {
+            setSelectedAddress(null);
+            return;
+        }
+
+        setSelectedAddress(address);
+        setFormData(prev => ({
+            ...prev,
+            street: address.street,
+            number: address.number || '',
+            complement: address.complement || '',
+            neighborhood: address.neighborhood,
+            city: address.city,
+            state: address.state,
+            zip_code: address.zip_code,
+        }));
+        toast.success('✅ Endereço preenchido automaticamente!');
+    };
 
     const handleCepBlur = async () => {
         const cep = formData.zip_code?.replace(/\D/g, '');
@@ -171,57 +224,7 @@ export default function PropertiesPage() {
                 return;
             }
 
-            // ------------------------------------------------------------------
-            // LÓGICA DE GEOCODIFICAÇÃO (BLINDADA)
-            // ------------------------------------------------------------------
-            let lat = null;
-            let lng = null;
-
-            try {
-                // 1. Tenta Endereço Completo
-                const query = `${formData.street}, ${formData.number}, ${formData.neighborhood}, Salesópolis, São Paulo, Brazil`;
-                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
-                let res = await fetch(url);
-                let data = await res.json();
-
-                if (data && data.length > 0) {
-                    lat = parseFloat(data[0].lat);
-                    lng = parseFloat(data[0].lon);
-                    toast.success('📍 GPS Preciso encontrado!');
-                }
-
-                // 2. Tenta CEP (Se falhou 1)
-                if (!lat && formData.zip_code) {
-                    const cleanCep = formData.zip_code.replace(/\D/g, '');
-                    const urlCep = `https://nominatim.openstreetmap.org/search?format=json&postalcode=${cleanCep}&country=Brazil&limit=1`;
-                    res = await fetch(urlCep);
-                    data = await res.json();
-                    if (data && data.length > 0) {
-                        lat = parseFloat(data[0].lat);
-                        lng = parseFloat(data[0].lon);
-                        toast.info('📍 GPS via CEP encontrado');
-                    }
-                }
-
-                // 3. Fallback Rua + Cidade (Se falhou 1 e 2)
-                if (!lat) {
-                    const queryF = `${formData.street}, Salesópolis, São Paulo`;
-                    const urlF = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryF)}&limit=1`;
-                    res = await fetch(urlF);
-                    data = await res.json();
-                    if (data && data.length > 0) {
-                        lat = parseFloat(data[0].lat);
-                        lng = parseFloat(data[0].lon);
-                        toast.warning('📍 GPS Aproximado (Rua)');
-                    }
-                }
-
-            } catch (geoError) {
-                console.error("Erro GPS", geoError);
-            }
-            // ------------------------------------------------------------------
-
-
+            // Dados do imóvel para salvar
             const propertyData = {
                 digital_code: formData.digital_code,
                 street: formData.street,
@@ -235,8 +238,8 @@ export default function PropertiesPage() {
                 area_built: formData.area_built ? parseFloat(formData.area_built) : null,
                 property_type: formData.property_type || null,
                 status: 'active',
-                lat: lat, // Salva Latitude
-                lng: lng, // Salva Longitude
+                // Nota: coordinates (geometry PostGIS) será calculado automaticamente
+                // pelo trigger do banco ou pode ser adicionado depois via geocoding
             };
 
             const { error } = editingProperty
@@ -244,17 +247,22 @@ export default function PropertiesPage() {
                 : await supabase.from('properties').insert(propertyData);
 
             if (error) {
-                if (error.code === '23505') toast.error('Código já existe!');
-                else throw error;
+                console.error('Erro Supabase:', error);
+                if (error.code === '23505') {
+                    toast.error('Código já existe!');
+                } else {
+                    toast.error(`Erro: ${error.message || 'Verifique os dados'}`);
+                }
                 return;
             }
 
             toast.success('Salvo com sucesso!');
             setOpenDialog(false);
+            setSelectedAddress(null); // Limpa seleção
             loadProperties();
         } catch (error: any) {
-            console.error(error);
-            toast.error('Erro ao salvar');
+            console.error('Erro completo:', error);
+            toast.error(`Erro ao salvar: ${error.message || 'Desconhecido'}`);
         } finally {
             setSaving(false);
         }
@@ -285,6 +293,7 @@ export default function PropertiesPage() {
 
     const handleOpenNew = () => {
         setEditingProperty(null);
+        setSelectedAddress(null); // Limpa endereço selecionado
         setFormData({
             digital_code: '', street: '', number: '', complement: '', neighborhood: '',
             city: 'Salesópolis', state: 'SP', zip_code: '', area_total: '', area_built: '',
@@ -369,6 +378,65 @@ export default function PropertiesPage() {
             <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
                 <DialogTitle>{editingProperty ? 'Editar' : 'Novo'} Imóvel</DialogTitle>
                 <DialogContent dividers>
+                    {/* SELETOR DE ENDEREÇO EXISTENTE */}
+                    {!editingProperty && (
+                        <Box mb={3}>
+                            <Alert severity="info" icon={<LocationIcon />} sx={{ mb: 2 }}>
+                                <strong>Facilite o cadastro!</strong> Selecione um endereço já cadastrado no sistema para preencher automaticamente os campos.
+                            </Alert>
+                            <Autocomplete
+                                value={selectedAddress}
+                                onChange={(_, newValue) => handleAddressSelect(newValue)}
+                                options={addresses}
+                                getOptionLabel={(option) =>
+                                    `${option.street}, ${option.number || 'S/N'} - ${option.neighborhood} (${option.zip_code})`
+                                }
+                                // Comparação correta de objetos
+                                isOptionEqualToValue={(option, value) => option.id === value.id}
+                                // FILTRO CUSTOMIZADO - Busca em todos os campos
+                                filterOptions={(options, state) => {
+                                    const inputValue = state.inputValue.toLowerCase().trim();
+                                    if (!inputValue) return options;
+
+                                    return options.filter(option => {
+                                        // Busca em: rua, número, bairro, cidade, CEP
+                                        const searchText = `
+                                            ${option.street} 
+                                            ${option.number || ''} 
+                                            ${option.neighborhood} 
+                                            ${option.city} 
+                                            ${option.zip_code}
+                                        `.toLowerCase();
+
+                                        return searchText.includes(inputValue);
+                                    });
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="🔍 Buscar Endereço Existente"
+                                        placeholder="Digite rua, número, bairro ou CEP..."
+                                        helperText="Opcional: Selecione um endereço da base ou preencha manualmente abaixo"
+                                    />
+                                )}
+                                renderOption={(props, option) => (
+                                    <li {...props}>
+                                        <Box>
+                                            <Typography variant="body2" fontWeight={600}>
+                                                {option.street}, {option.number || 'S/N'}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {option.neighborhood} - {option.city}/{option.state} - CEP: {option.zip_code}
+                                            </Typography>
+                                        </Box>
+                                    </li>
+                                )}
+                                noOptionsText="Nenhum endereço encontrado"
+                                fullWidth
+                            />
+                        </Box>
+                    )}
+
                     <Grid container spacing={2}>
                         <Grid item xs={12} sm={4}>
                             <TextField fullWidth label="Código Digital *" value={formData.digital_code} onChange={e => setFormData({ ...formData, digital_code: e.target.value })} />
